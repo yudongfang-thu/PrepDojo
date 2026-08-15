@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PrepDojo · 秋招刷题小助手</title>
+<link rel="stylesheet" href="https://unpkg.com/codemirror@5.65.16/lib/codemirror.min.css">
+<link rel="stylesheet" href="https://unpkg.com/codemirror@5.65.16/theme/material-darker.min.css">
+<style>
+:root {
+  --bg: #0f1115; --panel: #171a21; --panel2: #1d212b; --border: #2a2f3c;
+  --text: #e6e9ef; --muted: #8b93a7; --accent: #4f8cff; --green: #3fb950;
+  --red: #f85149; --amber: #d29922; --purple: #ab7df8;
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg:#f6f7f9; --panel:#ffffff; --panel2:#f0f2f5; --border:#dde1e8;
+          --text:#1c2128; --muted:#5c6577; --accent:#2563eb; --green:#1a7f37;
+          --red:#cf222e; --amber:#9a6700; --purple:#8250df; }
+}
+* { box-sizing: border-box; }
+body { margin:0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background:var(--bg); color:var(--text); }
+header { display:flex; align-items:center; gap:16px; padding:10px 20px;
+  background:var(--panel); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:10; }
+header .logo { font-weight:700; font-size:17px; }
+header .logo em { color:var(--accent); font-style:normal; }
+nav { display:flex; gap:4px; }
+nav button { background:none; border:none; color:var(--muted); padding:7px 14px; font-size:14px;
+  cursor:pointer; border-radius:7px; }
+nav button.active { background:var(--panel2); color:var(--text); }
+#llm-badge { margin-left:auto; font-size:12px; color:var(--muted); }
+#llm-badge.on { color:var(--green); }
+main { padding:20px; max-width:1280px; margin:0 auto; }
+.hidden { display:none !important; }
+.card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px 18px; }
+.grid2 { display:grid; grid-template-columns: minmax(340px, 2fr) minmax(420px, 3fr); gap:16px; }
+@media (max-width: 980px) { .grid2 { grid-template-columns: 1fr; } }
+table { border-collapse:collapse; width:100%; font-size:13.5px; }
+th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--border); }
+th { color:var(--muted); font-weight:500; }
+.problem-row { cursor:pointer; }
+.problem-row:hover { background:var(--panel2); }
+.badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; margin-right:6px; }
+.badge.easy { color:var(--green); background:color-mix(in srgb, var(--green) 12%, transparent); }
+.badge.medium { color:var(--amber); background:color-mix(in srgb, var(--amber) 12%, transparent); }
+.badge.hard { color:var(--red); background:color-mix(in srgb, var(--red) 12%, transparent); }
+.badge.tag { color:var(--purple); background:color-mix(in srgb, var(--purple) 10%, transparent); }
+#statement { font-size:14.5px; line-height:1.75; white-space:pre-wrap; }
+.toolbar { display:flex; gap:10px; align-items:center; margin:12px 0; flex-wrap:wrap; }
+select, button.btn { background:var(--panel2); color:var(--text); border:1px solid var(--border);
+  border-radius:7px; padding:7px 14px; font-size:14px; }
+button.btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; cursor:pointer; }
+button.btn:disabled { opacity:.5; cursor:default; }
+#editor-holder .CodeMirror { height:420px; border-radius:8px; border:1px solid var(--border); }
+#fallback-editor { width:100%; height:420px; font-family:ui-monospace,Menlo,monospace; font-size:13px;
+  background:var(--panel2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:10px; }
+.verdict-AC { color:var(--green); font-weight:700; }
+.verdict-WA, .verdict-RE, .verdict-CE, .verdict-MLE { color:var(--red); font-weight:700; }
+.verdict-TLE { color:var(--amber); font-weight:700; }
+#result-area pre { background:var(--panel2); border-radius:8px; padding:12px; overflow:auto;
+  font-size:12.5px; line-height:1.6; white-space:pre-wrap; }
+.quiz-q { font-size:16px; font-weight:600; line-height:1.7; margin-bottom:14px; }
+textarea.answer { width:100%; height:180px; background:var(--panel2); color:var(--text);
+  border:1px solid var(--border); border-radius:8px; padding:12px; font-size:14px; line-height:1.7; resize:vertical; }
+.score-big { font-size:34px; font-weight:800; }
+.muted { color:var(--muted); font-size:13px; }
+.per-point { margin:6px 0; padding:8px 12px; border-radius:8px; background:var(--panel2); font-size:13.5px; }
+.per-point.hit { border-left:3px solid var(--green); }
+.per-point.miss { border-left:3px solid var(--red); }
+.stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+.stats-grid .card { text-align:center; }
+.stats-grid .num { font-size:30px; font-weight:800; }
+.followup-box { border-left:3px solid var(--purple); padding:10px 14px; background:var(--panel2);
+  border-radius:8px; margin:12px 0; }
+h2.sec { font-size:16px; margin:4px 0 12px; }
+a { color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Prep<em>Dojo</em> <span class="muted" style="font-size:12px">秋招刷题小助手</span></div>
+  <nav>
+    <button id="nav-coding" class="active">代码题</button>
+    <button id="nav-quiz">八股</button>
+    <button id="nav-stats">概览</button>
+  </nav>
+  <span id="llm-badge"></span>
+</header>
+<main>
+  <!-- 代码题 -->
+  <section id="page-coding">
+    <div id="problem-list-view">
+      <h2 class="sec">代码题（本地沙箱判题 + AI 点评）</h2>
+      <table id="problem-table"><thead>
+        <tr><th>编号</th><th>题目</th><th>难度</th><th>标签</th><th>用例数</th></tr>
+      </thead><tbody></tbody></table>
+      <p class="muted" style="margin-top:14px">判题对错一律以测试用例为准；AI 只做点评。
+        题面与用例均为本仓库自写。接入自己的 LeetCode 题记录见 README（BYO 模式）。</p>
+    </div>
+    <div id="problem-detail-view" class="hidden grid2">
+      <div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="btn" id="back-btn">← 返回</button>
+          <h2 class="sec" id="pd-title" style="margin:0"></h2>
+        </div>
+        <div id="pd-badges" style="margin:8px 0"></div>
+        <div class="card"><div id="statement"></div></div>
+      </div>
+      <div>
+        <div class="toolbar">
+          <select id="lang-select"><option value="python">Python 3</option><option value="cpp">C++ 17</option></select>
+          <button class="btn primary" id="submit-btn">提交判题</button>
+          <button class="btn" id="review-btn" disabled>AI 点评</button>
+        </div>
+        <div id="editor-holder"></div>
+        <div id="result-area" style="margin-top:14px"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 八股 -->
+  <section id="page-quiz" class="hidden">
+    <div id="quiz-start">
+      <h2 class="sec">八股陪练（抽题 → 作答 → AI 打分 → 追问）</h2>
+      <div class="toolbar">
+        <select id="quiz-tag-select"><option value="">全部标签</option></select>
+        <select id="quiz-num"><option value="5">5 题</option><option value="10">10 题</option><option value="20">20 题</option></select>
+        <button class="btn primary" id="quiz-start-btn">开始抽题</button>
+      </div>
+      <p class="muted">题卡来自你自己接入的知识目录（本地 data/prepdojo.db），
+        内容不上传仓库；打分时会把你的作答发送到所配置的 LLM 服务商。</p>
+    </div>
+    <div id="quiz-session" class="hidden">
+      <div class="muted" id="quiz-progress"></div>
+      <div class="card" style="margin-top:12px">
+        <div class="quiz-q" id="quiz-question"></div>
+        <textarea class="answer" id="quiz-answer" placeholder="用自己的话作答，答完提交评分…"></textarea>
+        <div class="toolbar">
+          <button class="btn primary" id="quiz-grade-btn">提交评分</button>
+          <button class="btn" id="quiz-skip-btn">跳过此题</button>
+        </div>
+      </div>
+      <div id="quiz-feedback" class="hidden"></div>
+      <div class="toolbar" style="margin-top:14px">
+        <button class="btn primary hidden" id="quiz-next-btn">下一题</button>
+        <button class="btn" id="quiz-exit-btn">结束练习</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 概览 -->
+  <section id="page-stats" class="hidden">
+    <h2 class="sec">概览</h2>
+    <div class="stats-grid" id="stats-grid"></div>
+    <p class="muted" style="margin-top:16px">所有数据仅存于本机 data/prepdojo.db。</p>
+  </section>
+</main>
+<script src="https://unpkg.com/codemirror@5.65.16/lib/codemirror.min.js"></script>
+<script src="https://unpkg.com/codemirror@5.65.16/mode/python/python.min.js"></script>
+<script src="https://unpkg.com/codemirror@5.65.16/mode/clike/clike.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
