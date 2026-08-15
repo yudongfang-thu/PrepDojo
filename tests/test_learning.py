@@ -117,3 +117,22 @@ def test_submit_updates_wrong_book(tmp_path):
             "for x in a[1:]:\n    cur=max(x,cur+x);ans=max(ans,cur)\nprint(ans)")
     c.post("/api/submit", json={"problem_id": "cp-003", "language": "python", "code": good})
     assert c.get("/api/problems/wrong").json()["wrong"] == []  # AC 自动移出
+
+
+def test_problem_generate_endpoint_guard(tmp_path):
+    from prepdojo.db import DB as DB2
+    from prepdojo.seed_loader import load_seed_dir as _ls
+
+    db2 = DB2(tmp_path / "gen.db")
+    _ls(db2, SEEDS)
+    cfg2 = Config(api_key="", db_path=tmp_path / "gen.db")
+    c2 = TestClient(create_app(cfg2, db2))
+    assert c2.post("/api/problems/generate", json={"brief": ""}).status_code == 400
+    assert c2.post("/api/problems/generate",
+                   json={"brief": "出一道题"}).status_code == 503
+
+
+def test_problem_gen_slug():
+    from prepdojo.problem_gen import _slug
+    assert _slug("Two Sum II!") == "two-sum-ii"
+    assert _slug("中文题") == "gen"

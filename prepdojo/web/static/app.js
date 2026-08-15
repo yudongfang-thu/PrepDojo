@@ -115,6 +115,7 @@ async function loadProblems() {
       <td><span class="badge ${p.difficulty}">${{easy:"简单",medium:"中等",hard:"困难"}[p.difficulty]||p.difficulty}</span></td>
       <td>${p.tags.map(t => `<span class="badge tag">${esc(t)}</span>`).join("")}</td>
       <td class="muted">${p.n_cases}</td>
+      <td>${p.id.startsWith("cpg-") ? `<button class="btn" style="padding:2px 8px;font-size:11px" onclick="delProblem('${p.id}')">删除</button>` : ""}</td>
     </tr>`;
   }).join("");
   tb.querySelectorAll(".problem-row").forEach(tr => {
@@ -657,6 +658,93 @@ $("quiz-exit-btn").onclick = () => { $("quiz-session").classList.add("hidden"); 
 // ---------- 知识库管理 ----------
 let kbThinkingText = "";
 
+// 知识库 tab 切换
+function setKbTab(tab) {
+  $("kb-tab-knowledge").className = "btn" + (tab === "knowledge" ? " primary" : "");
+  $("kb-tab-coding").className = "btn" + (tab === "coding" ? " primary" : "");
+  $("kb-knowledge-view").classList.toggle("hidden", tab !== "knowledge");
+  $("kb-coding-view").classList.toggle("hidden", tab !== "coding");
+}
+$("kb-tab-knowledge").onclick = () => setKbTab("knowledge");
+$("kb-tab-coding").onclick = () => setKbTab("coding");
+
+// ---------- AI 出题 ----------
+$("gen-start-btn").onclick = async () => {
+  const brief = $("gen-brief").value.trim();
+  if (!brief) return alert("请填写出题需求或题目描述");
+  const btn = $("gen-start-btn");
+  btn.disabled = true; btn.textContent = "生成中…";
+  $("gen-progress-card").classList.remove("hidden");
+  const live = $("gen-live");
+  live.innerHTML = "";
+  let thinkBox = null;
+  try {
+    const resp = await fetch("/api/problems/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ brief }),
+    });
+    if (!resp.ok) {
+      let msg = resp.statusText;
+      try { msg = (await resp.json()).detail || msg; } catch {}
+      throw new Error(msg);
+    }
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
+        if (!chunk.startsWith("data: ")) continue;
+        const ev = JSON.parse(chunk.slice(6));
+        const k = ev.event;
+        if (k === "thinking_delta" || k === "content_delta") {
+          if (!thinkBox) thinkBox = makeThinkingBox(live);
+          appendThinking(thinkBox, ev.text);
+        } else if (k === "verify_start") {
+          const d = document.createElement("div");
+          d.className = "file-line";
+          d.textContent = `⚙️ 沙箱验证参考解（第 ${ev.attempt + 1} 次尝试，${ev.n_cases} 个用例）…`;
+          live.appendChild(d); thinkBox = null;
+        } else if (k === "verify_case") {
+          const d = document.createElement("div");
+          d.className = "card-line";
+          d.textContent = `✅ 全部用例跑通：${ev.detail}`;
+          live.appendChild(d);
+        } else if (k === "verify_fix") {
+          const d = document.createElement("div");
+          d.className = "fail-line";
+          d.textContent = `⚠️ 参考解跑挂，喂回错误让 AI 修复：${(ev.errors || "").slice(0, 120)}`;
+          live.appendChild(d);
+        } else if (k === "saved") {
+          const d = document.createElement("div");
+          d.className = "file-line";
+          d.innerHTML = `🎉 已入库：<b>${esc(ev.title)}</b>（${esc(ev.difficulty)}，${ev.n_cases} 用例）
+           　<button class="btn" style="padding:3px 10px;font-size:12px" onclick="goGenProblem('${esc(ev.problem_id)}')">去刷这道题 →</button>`;
+          live.appendChild(d);
+          if (thinkBox) thinkBox.open = false;
+          $("gen-status").textContent = "生成成功";
+        } else if (k === "error") {
+          const d = document.createElement("div");
+          d.className = "fail-line";
+          d.textContent = "❌ " + ev.message;
+          live.appendChild(d);
+        }
+        live.scrollTop = 1e9;
+      }
+    }
+  } catch (e) {
+    live.insertAdjacentHTML("beforeend", `<div class="fail-line">❌ ${esc(e.message)}</div>`);
+  } finally {
+    btn.disabled = false; btn.textContent = "生成题目";
+  }
+};
+function goGenProblem(pid) { showPage("coding"); openProblem(pid); }
+window.goGenProblem = goGenProblem;
+
 async function loadSources() {
   const d = await api("/api/sources");
   const tb = $("kb-sources-table").querySelector("tbody");
@@ -781,7 +869,11 @@ async function loadSettings() {
   try {
     const d = await api("/api/llm/config");
     $("set-baseurl").value = d.base_url;
-    $("set-model").value = d.model;
+    const sel = $("set-model-select");
+    if (![...sel.options].some(o => o.value === d.model)) {
+      sel.innerHTML = `<option value="${esc(d.model)}">${esc(d.model)}</option>`;
+    }
+    sel.value = d.model;
     $("set-key-masked").textContent = d.configured ? d.api_key_masked : "未配置";
     $("set-status").textContent = d.configured ? "● 已配置" : "○ 未配置";
   } catch {}
@@ -795,14 +887,13 @@ $("set-scan-btn").onclick = async () => {
     await api("/api/llm/config", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ base_url: $("set-baseurl").value.trim(),
-        model: $("set-model").value.trim(), api_key: $("set-apikey").value.trim() }),
+        model: $("set-model-select").value, api_key: $("set-apikey").value.trim() }),
     });
     const d = await api("/api/llm/models");
     const sel = $("set-model-select");
-    sel.classList.remove("hidden");
     sel.innerHTML = d.models.map(m =>
       `<option value="${esc(m)}" ${m === d.current ? "selected" : ""}>${esc(m)}</option>`).join("");
-    sel.onchange = () => { $("set-model").value = sel.value; };
+    sel.value = d.current;
     $("set-status").textContent = `● 扫到 ${d.models.length} 个模型`;
     refreshBadge();
   } catch (e) { alert("扫描失败：" + e.message); }
@@ -814,7 +905,7 @@ $("set-save-btn").onclick = async () => {
     const d = await api("/api/llm/config", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ base_url: $("set-baseurl").value.trim(),
-        model: $("set-model").value.trim(), api_key: $("set-apikey").value.trim() }),
+        model: $("set-model-select").value, api_key: $("set-apikey").value.trim() }),
     });
     $("set-status").textContent = d.llm_ready ? `● 已保存（${d.model}）` : "已保存，但 key 仍为空";
     $("set-apikey").value = "";
@@ -848,3 +939,10 @@ refreshLearnProgress();
 // inline onclick 导出
 window.delSource = delSource;
 window.kbGo = kbGo;
+
+async function delProblem(pid) {
+  if (!confirm("删除这道 AI 生成题？")) return;
+  await api("/api/problems/" + pid, { method: "DELETE" });
+  loadProblems();
+}
+window.delProblem = delProblem;

@@ -321,28 +321,55 @@ details.thinking .th-content { white-space:pre-wrap; color:var(--muted); font-st
 
   <!-- 知识库 -->
   <section id="page-kb" class="hidden">
-    <h2 class="sec">知识库管理（导入 / 删除）</h2>
-    <div class="card" style="margin-bottom:16px">
-      <b>从本机目录导入</b>
-      <p class="muted" style="font-size:13px;margin:6px 0 10px">选择一个目录，其中 PDF / Markdown / 文本会被 AI 结构化为八股题卡。内容只存本机。</p>
-      <div class="toolbar">
-        <input id="kb-path" placeholder="如 /Users/you/Documents/八股资料" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px">
-        <button class="btn" id="kb-browse-btn">浏览</button>
-        <button class="btn primary" id="kb-import-btn">开始导入</button>
-      </div>
-      <div id="kb-browse-area"></div>
+    <h2 class="sec">知识库管理</h2>
+    <div class="toolbar" style="margin-bottom:14px">
+      <button class="btn primary" id="kb-tab-knowledge">📖 八股知识</button>
+      <button class="btn" id="kb-tab-coding">💻 Coding 题</button>
     </div>
-    <div id="kb-progress-card" class="card hidden" style="margin-bottom:16px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <b>AI 正在干活</b><span class="muted" id="kb-progress-text"></span>
+
+    <!-- 八股知识导入 -->
+    <div id="kb-knowledge-view">
+      <div class="card" style="margin-bottom:16px">
+        <b>从本机目录导入八股</b>
+        <p class="muted" style="font-size:13px;margin:6px 0 10px">选择一个目录，其中 PDF / Markdown / 文本会被 AI 结构化为八股题卡。内容只存本机。</p>
+        <div class="toolbar">
+          <input id="kb-path" placeholder="如 /Users/you/Documents/八股资料" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px">
+          <button class="btn" id="kb-browse-btn">浏览</button>
+          <button class="btn primary" id="kb-import-btn">开始导入</button>
+        </div>
+        <div id="kb-browse-area"></div>
       </div>
-      <div class="progress-bar"><div id="kb-progress-fill"></div></div>
-      <div id="kb-live" class="live-log"></div>
+      <div id="kb-progress-card" class="card hidden" style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <b>AI 正在干活</b><span class="muted" id="kb-progress-text"></span>
+        </div>
+        <div class="progress-bar"><div id="kb-progress-fill"></div></div>
+        <div id="kb-live" class="live-log"></div>
+      </div>
+      <h2 class="sec">已导入的来源</h2>
+      <table id="kb-sources-table"><thead>
+        <tr><th>来源</th><th>题卡数</th><th>导入时间</th><th></th></tr>
+      </thead><tbody></tbody></table>
     </div>
-    <h2 class="sec">已导入的来源</h2>
-    <table id="kb-sources-table"><thead>
-      <tr><th>来源</th><th>题卡数</th><th>导入时间</th><th></th></tr>
-    </thead><tbody></tbody></table>
+
+    <!-- Coding 题生成 -->
+    <div id="kb-coding-view" class="hidden">
+      <div class="card">
+        <b>AI 出题（自动沙箱验证）</b>
+        <p class="muted" style="font-size:13px;margin:6px 0 10px">
+          粘贴一道题的描述（你自己的题、笔记里的题），或只写出题要求（如"出一道单调栈的中等题"）。
+          AI 生成题面与参考解后，<b>系统会在本地沙箱实跑参考解生成全部期望输出</b>，验证自洽才入库——期望输出永远来自真实运行，不来自 AI 猜测。</p>
+        <textarea class="answer" id="gen-brief" placeholder="例1：出一道关于滑动窗口最大值的题，hard 难度。&#10;例2：粘贴你的题目描述（含输入输出格式更佳）…" style="height:110px"></textarea>
+        <div class="toolbar">
+          <button class="btn primary" id="gen-start-btn">生成题目</button>
+          <span class="muted" id="gen-status"></span>
+        </div>
+      </div>
+      <div id="gen-progress-card" class="card hidden" style="margin-top:14px">
+        <b>生成过程</b>
+        <div id="gen-live" class="live-log"></div>
+      </div>
+    </div>
   </section>
 
   <!-- 设置 -->
@@ -358,12 +385,11 @@ details.thinking .th-content { white-space:pre-wrap; color:var(--muted); font-st
         <input id="set-apikey" type="password" placeholder="sk-..." style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px;margin-top:4px">
       </div>
       <div style="margin-bottom:14px">
-        <label class="muted" style="font-size:13px">模型</label>
+        <label class="muted" style="font-size:13px">模型（点「扫描可用模型」后下拉选择）</label>
         <div class="toolbar" style="margin:4px 0 0">
-          <input id="set-model" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px">
+          <select id="set-model-select" style="flex:1"></select>
           <button class="btn" id="set-scan-btn">扫描可用模型</button>
         </div>
-        <select id="set-model-select" class="hidden" style="width:100%;margin-top:6px"></select>
       </div>
       <div class="toolbar">
         <button class="btn primary" id="set-save-btn">保存配置</button>

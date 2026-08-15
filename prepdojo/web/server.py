@@ -206,6 +206,59 @@ def create_app(cfg: Config, db: DB) -> FastAPI:
                                  headers={"Cache-Control": "no-cache",
                                           "X-Accel-Buffering": "no"})
 
+    @app.post("/api/problems/generate")
+    async def problems_generate(body: dict):
+        """AI 出题：生成 → 沙箱实跑参考解生成期望 → 自洽才入库（SSE）。"""
+        brief = (body.get("brief") or "").strip()
+        if not brief:
+            raise HTTPException(400, "请填写出题需求或题目描述")
+        llm = _llm(cfg)
+        if llm is None:
+            raise HTTPException(503, _LLM_HINT)
+        from ..problem_gen import generate_problem
+
+        import asyncio
+        import queue as _q
+
+        loop = asyncio.get_event_loop()
+
+        async def gen():
+            q: _q.Queue = _q.Queue()
+
+            def on_event(kind: str, data: dict) -> None:
+                q.put((kind, data))
+
+            def run():
+                try:
+                    out = generate_problem(llm, brief,
+                                           cpp_compiler=cfg.cpp_compiler,
+                                           on_event=on_event)
+                    db.upsert_problem(out["problem"], out["cases"])
+                    q.put(("saved", {"problem_id": out["problem"]["id"],
+                                     "title": out["problem"]["title"],
+                                     "difficulty": out["problem"]["difficulty"],
+                                     "tags": out["problem"]["tags"],
+                                     "n_cases": len(out["cases"])}))
+                except Exception as e:
+                    q.put(("error", {"message": str(e)[:400]}))
+                finally:
+                    q.put(("_end", {}))
+
+            task = loop.run_in_executor(None, run)
+            while True:
+                kind, data = await loop.run_in_executor(None, q.get)
+                if kind == "_end":
+                    break
+                yield "data: " + json.dumps({"event": kind, **data},
+                                            ensure_ascii=False) + "\n\n"
+            await task
+
+        from fastapi.responses import StreamingResponse
+
+        return StreamingResponse(gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache",
+                                          "X-Accel-Buffering": "no"})
+
     @app.get("/api/stats")
     def stats():
         return db.stats()
@@ -219,6 +272,12 @@ def create_app(cfg: Config, db: DB) -> FastAPI:
     @app.get("/api/problems")
     def problems():
         return {"problems": db.list_problems()}
+
+    @app.delete("/api/problems/{pid}")
+    def delete_problem(pid: str):
+        db.execute("DELETE FROM test_cases WHERE problem_id=?", (pid,))
+        db.execute("DELETE FROM coding_problems WHERE id=?", (pid,))
+        return {"ok": True}
 
     @app.get("/api/problems/wrong")
     def wrong_problems():
