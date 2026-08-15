@@ -1,65 +1,27 @@
-# AI Literature Analyzer .gitignore
+# PrepDojo .gitignore
 
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual Environment
+.venv/
 venv/
-env/
-ENV/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# 数据文件
-data/input/*.pdf
-data/output/summaries/*.md
-data/output/method_cards/*.md
-data/output/batch_reports/*.md
-*.log
-
-# 但保留示例文件和目录结构
-!data/input/.gitkeep
-!data/output/summaries/.gitkeep
-!data/output/method_cards/.gitkeep
-!data/output/batch_reports/.gitkeep
-
-# 配置文件（包含API密钥）
-# config/config.yaml  # 现在包含在仓库中作为模板，用户需要自己设置API密钥
-!config/config.yaml.example
-
-# 用户的实际配置文件（如果用户重命名）
-config/my_config.yaml
-config/*_config.yaml
-
-# 临时文件
-*.tmp
-.DS_Store
-Thumbs.db
-
-# 测试
 .pytest_cache/
 .coverage
 htmlcov/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# ===== 用户数据红线：知识库与练习记录永不入库 =====
+data/
+!data/.gitkeep
+*.db
+*.sqlite3
+.env
+
+# 判题临时产物
+tmp/judge/

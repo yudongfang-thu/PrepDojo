@@ -1,0 +1,85 @@
+# AI Literature Analyzer Configuration Example
+# 复制此文件为 config.yaml 并填入您的配置
+
+# API配置
+api:
+  # API密钥 - 请替换为您的真实API密钥
+  api_key: "your-api-key-here"
+  
+  # API基础URL
+  base_url: "https://api.siliconflow.cn/v1"
+  
+  # 使用的模型 (免费版: deepseek-ai/DeepSeek-R1, 付费版: Pro/deepseek-ai/DeepSeek-R1)
+  model: "Pro/deepseek-ai/DeepSeek-R1"
+  
+  # API调用配置
+  timeout: 180  # 超时时间(秒)
+  max_retries: 3  # 最大重试次数
+  retry_delay: 10  # 重试间隔(秒)
+  
+  # 模型参数
+  temperature: 0.3  # 生成温度 (0.0-1.0)
+  max_tokens: 3000  # 最大输出长度
+
+# 文件路径配置
+paths:
+  # 输入目录 - 放置PDF文献的目录
+  input_dir: "data/input"
+  
+  # 输出目录 - 生成分析结果的目录
+  output_dir: "data/output"
+  
+  # 具体输出路径
+  summaries_dir: "data/output/summaries"      # 分析报告
+  method_cards_dir: "data/output/method_cards"  # 方法卡片
+  batch_reports_dir: "data/output/batch_reports"  # 批量报告
+  
+  # 日志文件
+  log_file: "data/output/analyzer.log"
+
+# 处理配置
+processing:
+  # 文本提取配置
+  max_text_length: 4000  # 发送给AI的最大文本长度
+  extract_pages: 10  # 最多提取的PDF页数 (0表示全部)
+  
+  # 批量处理配置
+  batch_size: 0  # 批量处理数量限制 (0表示无限制)
+  parallel_workers: 1  # 并行工作数 (建议设为1避免API限制)
+  
+  # 文件过滤
+  supported_formats: [".pdf"]  # 支持的文件格式
+  skip_analyzed: true  # 跳过已分析的文件
+
+# 输出格式配置
+output:
+  # 文件命名格式
+  summary_suffix: "_ai_analysis"  # 分析报告后缀
+  method_card_suffix: "_method_card"  # 方法卡片后缀
+  
+  # 输出语言
+  language: "zh"  # zh: 中文, en: 英文
+  
+  # 报告格式
+  include_metadata: true  # 包含元数据信息
+  include_timestamps: true  # 包含时间戳
+  
+# 提示词配置
+prompts:
+  # 使用的提示词模板文件
+  analysis_template: "prompts/analysis_template.txt"
+  method_card_template: "prompts/method_card_template.txt"
+  
+  # 自定义领域关键词 (用于更好的分类)
+  domain_keywords:
+    量化: ["quantization", "quantize", "bit", "precision", "binary", "ternary", "int8", "fp16", "low-precision"]
+    剪枝: ["pruning", "prune", "sparsity", "sparse", "magnitude", "structured", "unstructured"]
+    蒸馏: ["distillation", "distill", "teacher", "student", "knowledge transfer", "soft target"]
+    架构优化: ["architecture", "mobilenet", "efficientnet", "lightweight", "efficient", "compact"]
+    低秩分解: ["low-rank", "matrix factorization", "svd", "decomposition", "rank approximation"]
+
+# 日志配置
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  console_output: true  # 是否输出到控制台
