@@ -1,0 +1,50 @@
+{
+ "id": "cp-004",
+ "title": "K 个一组翻转序列",
+ "difficulty": "medium",
+ "tags": [
+  "链表",
+  "模拟"
+ ],
+ "statement": "把一个长度为 n 的序列按每 k 个一组分组，组内翻转，不足 k 个的末尾组保持原序。\n（本题用序列模拟链表操作，直接用切片会被面试官追问，建议模拟节点指针操作。）\n\n**输入格式**：第一行两个整数 n 和 k（1 ≤ n ≤ 10^5, 1 ≤ k ≤ n）；\n第二行 n 个整数。\n\n**输出格式**：一行，处理后的序列，空格分隔。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "5 2\n1 2 3 4 5\n",
+   "output": "2 1 4 3 5",
+   "sample": true
+  },
+  {
+   "input": "7 3\n1 2 3 4 5 6 7\n",
+   "output": "3 2 1 6 5 4 7",
+   "sample": false
+  },
+  {
+   "input": "4 1\n1 2 3 4\n",
+   "output": "1 2 3 4",
+   "sample": false
+  },
+  {
+   "input": "6 6\n10 20 30 40 50 60\n",
+   "output": "60 50 40 30 20 10",
+   "sample": false
+  },
+  {
+   "input": "8 3\n1 2 3 4 5 6 7 8\n",
+   "output": "3 2 1 6 5 4 7 8",
+   "sample": false
+  },
+  {
+   "input": "1 1\n42\n",
+   "output": "42",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "n,k=map(int,input().split());a=input().split()\nout=[]\nfor i in range(0,n,k):\n    g=a[i:i+k]\n    out+= g[::-1] if len(g)==k else g\nprint(\" \".join(out))\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){long long n,k;std::cin>>n>>k;std::vector<std::string>a(n);\nfor(auto&x:a)std::cin>>x;std::vector<std::string>out;\nfor(long long i=0;i<n;i+=k){long long j=std::min(i+k,n);\nif(j-i==k)for(long long t=j-1;t>=i;--t)out.push_back(a[t]);\nelse for(long long t=i;t<j;++t)out.push_back(a[t]);}\nfor(size_t i=0;i<out.size();++i)std::cout<<out[i]<<\" \\n\"[i+1==out.size()];}\n"
+ }
+}

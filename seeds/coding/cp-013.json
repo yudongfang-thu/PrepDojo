@@ -1,0 +1,54 @@
+{
+ "id": "cp-013",
+ "title": "爬楼梯",
+ "difficulty": "easy",
+ "tags": [
+  "动态规划"
+ ],
+ "statement": "你在爬一个 n 阶楼梯，每次可以上 1 阶或 2 阶，求总方案数。\n（提示：结果可能很大，n ≤ 60，用 64 位整数。）\n\n**输入格式**：一个整数 n（1 ≤ n ≤ 60）。\n\n**输出格式**：一个整数，方案数。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "2\n",
+   "output": "1",
+   "sample": true
+  },
+  {
+   "input": "3\n",
+   "output": "2",
+   "sample": false
+  },
+  {
+   "input": "1\n",
+   "output": "1",
+   "sample": false
+  },
+  {
+   "input": "10\n",
+   "output": "55",
+   "sample": false
+  },
+  {
+   "input": "30\n",
+   "output": "832040",
+   "sample": false
+  },
+  {
+   "input": "60\n",
+   "output": "1548008755920",
+   "sample": false
+  },
+  {
+   "input": "45\n",
+   "output": "1134903170",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "n=int(input())\na,b=1,1\nfor _ in range(n-1):a,b=b,a+b\nprint(a)\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){long long n;std::cin>>n;unsigned long long a=1,b=1;\nfor(long long i=1;i<n;++i){unsigned long long t=a+b;a=b;b=t;}\nstd::cout<<a<<std::endl;}\n"
+ }
+}

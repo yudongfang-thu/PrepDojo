@@ -1,0 +1,50 @@
+{
+ "id": "cp-014",
+ "title": "零钱兑换",
+ "difficulty": "medium",
+ "tags": [
+  "动态规划",
+  "完全背包"
+ ],
+ "statement": "给定 n 种面额的硬币和一个总金额 amount，\n每种硬币数量无限，求凑出 amount 的最少硬币数；无法凑出输出 -1。\n\n**输入格式**：第一行两个整数 n 和 amount（1 ≤ n ≤ 20，0 ≤ amount ≤ 10^4）；\n第二行 n 个互不相同的正整数面额。\n\n**输出格式**：一个整数，最少硬币数或 -1。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "3 11\n1 2 5\n",
+   "output": "3",
+   "sample": true
+  },
+  {
+   "input": "1 0\n2\n",
+   "output": "0",
+   "sample": false
+  },
+  {
+   "input": "2 3\n2 5\n",
+   "output": "-1",
+   "sample": false
+  },
+  {
+   "input": "4 6418\n1 5 10 25\n",
+   "output": "261",
+   "sample": false
+  },
+  {
+   "input": "1 10000\n1\n",
+   "output": "10000",
+   "sample": false
+  },
+  {
+   "input": "3 7\n2 4 6\n",
+   "output": "-1",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "n,amt=map(int,input().split());c=list(map(int,input().split()))\nINF=float('inf')\ndp=[0]+[INF]*amt\nfor x in c:\n    for v in range(x,amt+1):\n        if dp[v-x]+1<dp[v]: dp[v]=dp[v-x]+1\nprint(dp[amt] if dp[amt]<INF else -1)\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){long long n,amt;std::cin>>n>>amt;std::vector<long long>c(n);\nfor(auto&x:c)std::cin>>x;std::vector<long long>dp(amt+1,INT64_MAX/2);dp[0]=0;\nfor(auto x:c)for(long long v=x;v<=amt;++v)dp[v]=std::min(dp[v],dp[v-x]+1);\nif(dp[amt]>=INT64_MAX/2)std::cout<<-1<<std::endl;else std::cout<<dp[amt]<<std::endl;}\n"
+ }
+}

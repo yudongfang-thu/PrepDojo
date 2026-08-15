@@ -1,0 +1,50 @@
+{
+ "id": "cp-020",
+ "title": "迷宫最短步数",
+ "difficulty": "medium",
+ "tags": [
+  "图",
+  "广度优先搜索"
+ ],
+ "statement": "一个 m×n 的迷宫，`.` 为通路、`#` 为墙、`S` 为起点、`E` 为终点。\n每步可上下左右移动一格（不能穿墙），求从 S 到 E 的最少步数；不可达输出 -1。\n\n**输入格式**：第一行两个整数 m 和 n（1 ≤ m, n ≤ 1000）；\n接下来 m 行每行 n 个字符。\n\n**输出格式**：一个整数，最少步数或 -1。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "3 3\nS.E\n.#.\n...\n",
+   "output": "2",
+   "sample": true
+  },
+  {
+   "input": "3 4\nS#.E\n.#..\n....\n",
+   "output": "7",
+   "sample": false
+  },
+  {
+   "input": "2 2\nSE\n##\n",
+   "output": "1",
+   "sample": false
+  },
+  {
+   "input": "1 5\nS..#E\n",
+   "output": "-1",
+   "sample": false
+  },
+  {
+   "input": "5 5\nS....\n.###.\n.#E#.\n.#...\n.....\n",
+   "output": "8",
+   "sample": false
+  },
+  {
+   "input": "3 3\nS#E\n.#.\n...\n",
+   "output": "6",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "from collections import deque\nm,n=map(int,input().split())\ng=[input().strip() for _ in range(m)]\nsx=sy=ex=ey=-1\nfor i in range(m):\n    for j in range(n):\n        if g[i][j]=='S': sx,sy=i,j\n        elif g[i][j]=='E': ex,ey=i,j\ndist=[[-1]*n for _ in range(m)]\ndist[sx][sy]=0\nq=deque([(sx,sy)])\nwhile q:\n    x,y=q.popleft()\n    if (x,y)==(ex,ey): break\n    for dx,dy in((1,0),(-1,0),(0,1),(0,-1)):\n        nx,ny=x+dx,y+dy\n        if 0<=nx<m and 0<=ny<n and g[nx][ny]!='#' and dist[nx][ny]==-1:\n            dist[nx][ny]=dist[x][y]+1;q.append((nx,ny))\nprint(dist[ex][ey])\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){long long m,n;std::cin>>m>>n;std::vector<std::string>g(m);\nfor(auto&r:g)std::cin>>r;\nlong long sx=-1,sy=-1,ex=-1,ey=-1;\nfor(long long i=0;i<m;++i)for(long long j=0;j<n;++j){\nif(g[i][j]=='S'){sx=i;sy=j;}else if(g[i][j]=='E'){ex=i;ey=j;}}\nstd::vector<std::vector<long long>>dist(m,std::vector<long long>(n,-1));\nstd::deque<std::pair<long long,long long>>q;dist[sx][sy]=0;q.push_back({sx,sy});\nlong long dx[4]={1,-1,0,0},dy[4]={0,0,1,-1};\nwhile(!q.empty()){auto[x,y]=q.front();q.pop_front();\nfor(int d=0;d<4;++d){long long nx=x+dx[d],ny=y+dy[d];\nif(nx>=0&&nx<m&&ny>=0&&ny<n&&g[nx][ny]!='#'&&dist[nx][ny]==-1){\ndist[nx][ny]=dist[x][y]+1;q.push_back({nx,ny});}}}\nstd::cout<<dist[ex][ey]<<std::endl;}\n"
+ }
+}

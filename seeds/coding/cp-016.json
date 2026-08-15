@@ -1,0 +1,50 @@
+{
+ "id": "cp-016",
+ "title": "移动零",
+ "difficulty": "easy",
+ "tags": [
+  "数组",
+  "双指针"
+ ],
+ "statement": "给定一个整数数组，把所有 0 移动到末尾，同时保持非零元素的相对顺序。\n要求原地操作（不复制整个数组）。\n\n**输入格式**：第一行整数 n（1 ≤ n ≤ 10^5）；第二行 n 个整数。\n\n**输出格式**：一行，处理后的序列，空格分隔。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "5\n0 1 0 3 12\n",
+   "output": "1 3 12 0 0",
+   "sample": true
+  },
+  {
+   "input": "1\n0\n",
+   "output": "0",
+   "sample": false
+  },
+  {
+   "input": "4\n1 2 3 4\n",
+   "output": "1 2 3 4",
+   "sample": false
+  },
+  {
+   "input": "6\n0 0 0 0 0 1\n",
+   "output": "1 0 0 0 0 0",
+   "sample": false
+  },
+  {
+   "input": "3\n7 0 0\n",
+   "output": "7 0 0",
+   "sample": false
+  },
+  {
+   "input": "5\n0 0 1 0 2\n",
+   "output": "1 2 0 0 0",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "n=int(input());a=input().split()\nslow=0\nfor fast in range(n):\n    if a[fast]!='0':\n        a[slow],a[fast]=a[fast],a[slow];slow+=1\nprint(\" \".join(a))\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){long long n;std::cin>>n;std::vector<std::string>a(n);\nfor(auto&x:a)std::cin>>x;long long slow=0;\nfor(long long fast=0;fast<n;++fast){if(a[fast]!=\"0\"){\nif(fast!=slow)std::swap(a[slow],a[fast]);++slow;}}\nfor(long long i=0;i<n;++i)std::cout<<a[i]<<(i+1<n?\" \":\"\\n\");}\n"
+ }
+}

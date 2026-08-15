@@ -1,0 +1,50 @@
+{
+ "id": "cp-008",
+ "title": "二叉树每层节点和",
+ "difficulty": "medium",
+ "tags": [
+  "二叉树",
+  "广度优先搜索"
+ ],
+ "statement": "一棵二叉树以层序遍历序列给出（缺失子节点用 `null` 占位，见样例），\n求每一层的节点值之和。\n\n**输入格式**：一行，层序序列，节点值或 `null`，空格分隔。根为第一个元素；\n第 i 个非空节点的左右子节点依次占据序列中的对应空位。\n（1 ≤ 节点数 ≤ 10^5，|节点值| ≤ 10^4）\n\n**输出格式**：一行，每层的和，空格分隔。\n\n**样例解释**：输入 `3 9 20 null null 15 7` 表示根为 3，左右子为 9 和 20，\n9 无子节点，20 的子节点为 15 和 7。输出 `3 29 22`。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "3 9 20 null null 15 7\n",
+   "output": "3 29 22",
+   "sample": true
+  },
+  {
+   "input": "1 null 2 null 3 null 4\n",
+   "output": "1 2 3 4",
+   "sample": false
+  },
+  {
+   "input": "5\n",
+   "output": "5",
+   "sample": false
+  },
+  {
+   "input": "1 2 3 4 5 null 6\n",
+   "output": "1 5 15",
+   "sample": false
+  },
+  {
+   "input": "-1 null -2 null -3\n",
+   "output": "-1 -2 -3",
+   "sample": false
+  },
+  {
+   "input": "7 3 9 1 null 5 8 null null null null null 2\n",
+   "output": "7 12 14 2",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "import sys\nfrom collections import deque\ntoks=sys.stdin.read().split()\nif not toks or toks[0]=='null':\n    print(); sys.exit()\nvals=[None if t=='null' else int(t) for t in toks]\nn=len(vals)\nch=[[None,None] for _ in range(n)]\nroot=0; free=[]; nxt=0\n# 建树：按层序给非空节点分配子指针槽\nnodes=[i for i in range(n) if vals[i] is not None]\nq=deque(nodes_map:=[i for i in range(n) if vals[i] is not None])\nit=iter(range(1,n))\n# 逐个非空节点取接下来两个槽作为左右子\nidx=0\nqq=deque([0])\npos=1\nwhile qq:\n    node=qq.popleft()\n    for b in (0,1):\n        if pos<n:\n            child=pos; pos+=1\n            if vals[child] is not None:\n                ch[node][b]=child; qq.append(child)\nres=[]\nqq=deque([0])\nwhile qq:\n    sz=len(qq); s=0\n    for _ in range(sz):\n        u=qq.popleft(); s+=vals[u]\n        for c in ch[u]:\n            if c is not None: qq.append(c)\n    res.append(str(s))\nprint(\" \".join(res))\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){std::vector<std::string>t;std::string x;\nwhile(std::cin>>x)t.push_back(x);\nlong long n=t.size();std::vector<long long>val(n);\nstd::vector<char>isn(n);std::vector<std::array<long long,2>>ch(n,{-1,-1});\nfor(long long i=0;i<n;++i){isn[i]=(t[i]==\"null\");if(!isn[i])val[i]=std::stoll(t[i]);}\nstd::deque<long long>q;long long root=-1;\nfor(long long i=0;i<n;++i)if(!isn[i]){root=i;break;}\nif(root==-1){std::cout<<std::endl;return 0;}\nq.push_back(root);long long pos=0;\n// 按层序为每个非空节点挂接下来的两个槽\nstd::deque<long long>build;build.push_back(root);\nlong long slot=0;\nfor(long long i=0;i<n&&i!=1;i++);\n// 直接重用一遍：pos 指向下一个待挂槽位（跳过根）\nslot=1;std::deque<long long>bq;bq.push_back(root);\nwhile(!bq.empty()){long long u=bq.front();bq.pop_front();\nfor(int b=0;b<2&&slot<n;++b,++slot){if(!isn[slot]){ch[u][b]=slot;bq.push_back(slot);}}}\nq.clear();q.push_back(root);bool first=true;\nwhile(!q.empty()){long long sz=q.size();long long s=0;\nfor(long long i=0;i<sz;++i){long long u=q.front();q.pop_front();s+=val[u];\nif(ch[u][0]>=0)q.push_back(ch[u][0]);if(ch[u][1]>=0)q.push_back(ch[u][1]);}\nif(!first)std::cout<<\" \";first=false;std::cout<<s;}\nstd::cout<<std::endl;}\n"
+ }
+}

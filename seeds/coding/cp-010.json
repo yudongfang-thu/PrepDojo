@@ -1,0 +1,50 @@
+{
+ "id": "cp-010",
+ "title": "合并区间",
+ "difficulty": "medium",
+ "tags": [
+  "排序",
+  "区间"
+ ],
+ "statement": "给定 n 个闭区间 [l, r]，把重叠或相邻（端点相接）的区间合并，\n输出合并后的区间集合。\n\n**输入格式**：第一行整数 n（1 ≤ n ≤ 10^5）；接下来 n 行每行两个整数 l r（|l|,|r| ≤ 10^9，l ≤ r）。\n\n**输出格式**：每行一个合并后的区间 `l r`，按左端点升序。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "4\n1 3\n2 6\n8 10\n15 18\n",
+   "output": "1 6\n8 10\n15 18",
+   "sample": true
+  },
+  {
+   "input": "2\n1 4\n4 5\n",
+   "output": "1 5",
+   "sample": false
+  },
+  {
+   "input": "3\n1 2\n3 4\n5 6\n",
+   "output": "1 2\n3 4\n5 6",
+   "sample": false
+  },
+  {
+   "input": "1\n-1000000000 1000000000\n",
+   "output": "-1000000000 1000000000",
+   "sample": false
+  },
+  {
+   "input": "5\n2 3\n1 2\n5 6\n4 5\n7 8\n",
+   "output": "1 3\n4 6\n7 8",
+   "sample": false
+  },
+  {
+   "input": "3\n1 1\n1 1\n0 0\n",
+   "output": "0 0\n1 1",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "n=int(input());iv=[]\nfor _ in range(n):\n    l,r=map(int,input().split());iv.append((l,r))\niv.sort()\nout=[]\nfor l,r in iv:\n    if out and l<=out[-1][1]: out[-1][1]=max(out[-1][1],r)\n    else: out.append([l,r])\nprint(\"\\n\".join(f\"{l} {r}\" for l,r in out))\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){long long n;std::cin>>n;std::vector<std::pair<long long,long long>>iv(n);\nfor(auto&p:iv)std::cin>>p.first>>p.second;\nstd::sort(iv.begin(),iv.end());std::vector<std::pair<long long,long long>>out;\nfor(auto[l,r]:iv){\nif(!out.empty()&&l<=out.back().second)out.back().second=std::max(out.back().second,r);\nelse out.push_back({l,r});}\nfor(auto[l,r]:out)std::cout<<l<<\" \"<<r<<\"\\n\";}\n"
+ }
+}

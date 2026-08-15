@@ -1,0 +1,59 @@
+{
+ "id": "cp-006",
+ "title": "括号序列有效性",
+ "difficulty": "easy",
+ "tags": [
+  "栈"
+ ],
+ "statement": "判断一个只包含 `(`、`)`、`[`、`]`、`{`、`}` 的字符串是否合法：\n左括号必须以正确顺序用相同类型的右括号闭合。\n\n**输入格式**：一行字符串（长度 ≤ 10^5，可能为空行）。\n\n**输出格式**：`valid` 或 `invalid`。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "()[]{}\n",
+   "output": "valid",
+   "sample": true
+  },
+  {
+   "input": "([)]\n",
+   "output": "invalid",
+   "sample": false
+  },
+  {
+   "input": "{[]}\n",
+   "output": "valid",
+   "sample": false
+  },
+  {
+   "input": "(\n",
+   "output": "invalid",
+   "sample": false
+  },
+  {
+   "input": "\n",
+   "output": "valid",
+   "sample": false
+  },
+  {
+   "input": "((((()))))\n",
+   "output": "valid",
+   "sample": false
+  },
+  {
+   "input": "(){[]()}\n",
+   "output": "valid",
+   "sample": false
+  },
+  {
+   "input": "]\n",
+   "output": "invalid",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "import sys\ns=sys.stdin.readline().rstrip(\"\\n\")\nst=[];pair={')':'(',']':'[','}':'{'}\nok=True\nfor c in s:\n    if c in '([{': st.append(c)\n    else:\n        if not st or st[-1]!=pair.get(c): ok=False;break\n        st.pop()\nif st: ok=False\nprint(\"valid\" if ok else \"invalid\")\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){std::string s;std::getline(std::cin,s);std::stack<char>st;\nstd::map<char,char>pair{{')','('},{']','['},{'}','{'}};\nbool ok=true;\nfor(char c:s){if(c=='('||c=='['||c=='{')st.push(c);\nelse{if(st.empty()||st.top()!=pair[c]){ok=false;break;}st.pop();}}\nif(!st.empty())ok=false;\nstd::cout<<(ok?\"valid\":\"invalid\")<<std::endl;}\n"
+ }
+}

@@ -1,0 +1,51 @@
+{
+ "id": "cp-001",
+ "title": "有序数组两数之和",
+ "difficulty": "easy",
+ "tags": [
+  "数组",
+  "双指针",
+  "哈希表"
+ ],
+ "statement": "给定一个 **升序** 整数数组和一个目标值 target，找出两个数使其和恰好等于 target。\n保证恰好存在一组解。\n\n**输入格式**：第一行两个整数 n 和 target（2 ≤ n ≤ 10^5）；\n第二行 n 个升序整数（绝对值 ≤ 10^9）。\n\n**输出格式**：一行两个整数，为这两个数的下标（从 1 开始，小的在前）。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "4 9\n2 7 11 15\n",
+   "output": "1 2",
+   "sample": true
+  },
+  {
+   "input": "3 6\n1 2 3\n",
+   "output": "",
+   "sample": false
+  },
+  {
+   "input": "2 0\n-1 1\n",
+   "output": "1 2",
+   "sample": false
+  },
+  {
+   "input": "5 100\n1 20 40 60 80\n",
+   "output": "2 5",
+   "sample": false
+  },
+  {
+   "input": "6 -8\n-10 -6 -3 -1 2 4\n",
+   "output": "1 5",
+   "sample": false
+  },
+  {
+   "input": "2 2000000000\n1000000000 1000000000\n",
+   "output": "1 2",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "n,t=map(int,input().split());a=list(map(int,input().split()))\ni,j=0,n-1\nwhile i<j:\n    s=a[i]+a[j]\n    if s==t: print(i+1,j+1); break\n    if s<t: i+=1\n    else: j-=1\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){long long n,t;std::cin>>n>>t;std::vector<long long>a(n);\nfor(auto&x:a)std::cin>>x;int i=0,j=n-1;\nwhile(i<j){long long s=a[i]+a[j];if(s==t){std::cout<<i+1<<\" \"<<j+1<<std::endl;return 0;}\nif(s<t)i++;else j--;} }\n"
+ }
+}

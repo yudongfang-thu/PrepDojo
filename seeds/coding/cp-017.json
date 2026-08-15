@@ -1,0 +1,55 @@
+{
+ "id": "cp-017",
+ "title": "课程修读顺序（拓扑排序）",
+ "difficulty": "medium",
+ "tags": [
+  "图",
+  "拓扑排序"
+ ],
+ "statement": "共有 numCourses 门课，编号 1..numCourses，给定 m 条依赖关系 `a b` 表示修 a 之前必须先修 b。\n求一个可行的修读顺序；若存在环输出 -1。\n若有多个可行顺序，输出 **字典序最小** 的那个（用最小堆实现拓扑排序）。\n\n**输入格式**：第一行两个整数 numCourses 和 m（1 ≤ numCourses ≤ 10^5, 0 ≤ m ≤ 2×10^5）；\n接下来 m 行每行 `a b`。\n\n**输出格式**：一行，numCourses 个整数（可行的修读顺序）或 -1。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "4 3\n2 1\n3 1\n4 2\n",
+   "output": "1 2 3 4",
+   "sample": true
+  },
+  {
+   "input": "2 2\n1 2\n2 1\n",
+   "output": "-1",
+   "sample": false
+  },
+  {
+   "input": "3 0\n",
+   "output": "1 2 3",
+   "sample": false
+  },
+  {
+   "input": "5 4\n2 1\n3 1\n4 3\n5 3\n",
+   "output": "1 2 3 4 5",
+   "sample": false
+  },
+  {
+   "input": "1 0\n",
+   "output": "1",
+   "sample": false
+  },
+  {
+   "input": "3 2\n3 1\n3 2\n",
+   "output": "1 2 3",
+   "sample": false
+  },
+  {
+   "input": "6 6\n2 1\n3 1\n4 2\n5 2\n6 3\n6 5\n",
+   "output": "1 2 3 4 5 6",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "import heapq\nN,M=map(int,input().split())\nadj=[[] for _ in range(N+1)];ind=[0]*(N+1)\nfor _ in range(M):\n    a,b=map(int,input().split())\n    adj[b].append(a);ind[a]+=1\nh=[i for i in range(1,N+1) if ind[i]==0]\nheapq.heapify(h)\nout=[]\nwhile h:\n    u=heapq.heappop(h);out.append(u)\n    for v in adj[u]:\n        ind[v]-=1\n        if ind[v]==0: heapq.heappush(h,v)\nprint(\" \".join(map(str,out)) if len(out)==N else -1)\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){long long N,M;std::cin>>N>>M;\nstd::vector<std::vector<long long>>adj(N+1);std::vector<long long>ind(N+1,0);\nfor(long long i=0;i<M;++i){long long a,b;std::cin>>a>>b;adj[b].push_back(a);ind[a]++;}\nstd::priority_queue<long long,std::vector<long long>,std::greater<>>h;\nfor(long long i=1;i<=N;++i)if(ind[i]==0)h.push(i);\nstd::vector<long long>out;\nwhile(!h.empty()){long long u=h.top();h.pop();out.push_back(u);\nfor(auto v:adj[u])if(--ind[v]==0)h.push(v);}\nif((long long)out.size()!=N)std::cout<<-1<<std::endl;\nelse{for(long long i=0;i<N;++i)std::cout<<out[i]<<(i+1<N?\" \":\"\\n\");}}\n"
+ }
+}

@@ -1,0 +1,50 @@
+{
+ "id": "cp-003",
+ "title": "最大子数组和",
+ "difficulty": "medium",
+ "tags": [
+  "数组",
+  "动态规划"
+ ],
+ "statement": "给定一个整数数组（可能含负数），求连续子数组的最大和。子数组至少包含一个元素。\n\n**输入格式**：第一行整数 n（1 ≤ n ≤ 10^5）；第二行 n 个整数（绝对值 ≤ 10^4）。\n\n**输出格式**：一个整数，最大子数组和。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "9\n-2 1 -3 4 -1 2 1 -5 4\n",
+   "output": "6",
+   "sample": true
+  },
+  {
+   "input": "1\n1\n",
+   "output": "1",
+   "sample": false
+  },
+  {
+   "input": "5\n5 4 -1 7 8\n",
+   "output": "23",
+   "sample": false
+  },
+  {
+   "input": "4\n-3 -1 -2 -5\n",
+   "output": "-1",
+   "sample": false
+  },
+  {
+   "input": "6\n-1 0 -2 0 -3 0\n",
+   "output": "0",
+   "sample": false
+  },
+  {
+   "input": "3\n1000000 1000000 1000000\n",
+   "output": "3000000",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "n=int(input());a=list(map(int,input().split()))\ncur=ans=a[0]\nfor x in a[1:]:\n    cur=max(x,cur+x);ans=max(ans,cur)\nprint(ans)\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){int n;std::cin>>n;std::vector<long long>a(n);\nfor(auto&x:a)std::cin>>x;long long cur=a[0],ans=a[0];\nfor(int i=1;i<n;++i){cur=std::max(a[i],cur+a[i]);ans=std::max(ans,cur);}\nstd::cout<<ans<<std::endl;}\n"
+ }
+}

@@ -1,0 +1,61 @@
+{
+ "id": "cp-019",
+ "title": "最长回文子串",
+ "difficulty": "medium",
+ "tags": [
+  "字符串",
+  "动态规划",
+  "双指针"
+ ],
+ "statement": "给定一个字符串，求它的最长回文子串；若有多个长度相同的，输出最靠左的那个。\n\n**输入格式**：一行字符串（长度 ≤ 2000，可含大小写字母与数字）。\n\n**输出格式**：一行，最长回文子串。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "babad\n",
+   "output": "bab",
+   "sample": true
+  },
+  {
+   "input": "cbbd\n",
+   "output": "bb",
+   "sample": false
+  },
+  {
+   "input": "a\n",
+   "output": "a",
+   "sample": false
+  },
+  {
+   "input": "bananas\n",
+   "output": "anana",
+   "sample": false
+  },
+  {
+   "input": "abcde\n",
+   "output": "a",
+   "sample": false
+  },
+  {
+   "input": "forgeeksskeegfor\n",
+   "output": "geeksskeeg",
+   "sample": false
+  },
+  {
+   "input": "aaaa\n",
+   "output": "aaaa",
+   "sample": false
+  },
+  {
+   "input": "abacdfgdcaba\n",
+   "output": "aba",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "s=input().strip()\nn=len(s)\nif n==0: print()\nelse:\n    best=(0,0)\n    for c in range(n):\n        for l,r in ((c,c),(c,c+1)):\n            while l>=0 and r<n and s[l]==s[r]: l-=1;r+=1\n            l+=1;r-=1\n            if r-l>best[1]-best[0] or (r-l==best[1]-best[0] and l<best[0]):\n                best=(l,r)\n    print(s[best[0]:best[1]+1])\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){std::string s;std::cin>>s;long long n=s.size();\nif(n==0){std::cout<<std::endl;return 0;}\nlong long bl=0,br=0;\nfor(long long c=0;c<n;++c){for(int t=0;t<2;++t){\nlong long l=c,r=c+t;\nwhile(l>=0&&r<n&&s[l]==s[r]){--l;++r;}\n++l;--r;\nif(r-l>br-bl||(r-l==br-bl&&l<bl)){bl=l;br=r;}}}\nstd::cout<<s.substr(bl,br-bl+1)<<std::endl;}\n"
+ }
+}

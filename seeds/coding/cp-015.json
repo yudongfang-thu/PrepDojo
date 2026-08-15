@@ -1,0 +1,50 @@
+{
+ "id": "cp-015",
+ "title": "二叉树的最大深度",
+ "difficulty": "easy",
+ "tags": [
+  "二叉树",
+  "递归"
+ ],
+ "statement": "一棵二叉树以层序遍历序列给出（缺失子节点用 `null` 占位，格式同「二叉树每层节点和」题），\n求它的最大深度（根深度为 1；空树深度为 0）。\n\n**输入格式**：一行，层序序列。\n\n**输出格式**：一个整数，最大深度。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "3 9 20 null null 15 7\n",
+   "output": "3",
+   "sample": true
+  },
+  {
+   "input": "1 null 2 null 3 null 4\n",
+   "output": "4",
+   "sample": false
+  },
+  {
+   "input": "5\n",
+   "output": "1",
+   "sample": false
+  },
+  {
+   "input": "1 2 3 4 5 null 6\n",
+   "output": "3",
+   "sample": false
+  },
+  {
+   "input": "1 null 2 3 null null 4 5\n",
+   "output": "5",
+   "sample": false
+  },
+  {
+   "input": "7 3 9 1 null 5 8 null null null null null 2\n",
+   "output": "4",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "import sys\nfrom collections import deque\ntoks=sys.stdin.read().split()\nn=len(toks)\nif n==0 or toks[0]=='null': print(0); sys.exit()\nisn=[t=='null' for t in toks]\nch=[[-1,-1] for _ in range(n)]\nroot=0;slot=1;bq=deque([root])\nwhile bq:\n    u=bq.popleft()\n    for b in (0,1):\n        if slot<n:\n            if not isn[slot]: ch[u][b]=slot; bq.append(slot)\n            slot+=1\nq=deque([(0,1)]);dep=0\nwhile q:\n    u,d=q.popleft();dep=max(dep,d)\n    for c in ch[u]:\n        if c>=0: q.append((c,d+1))\nprint(dep)\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){std::vector<std::string>t;std::string x;\nwhile(std::cin>>x)t.push_back(x);long long n=t.size();\nif(n==0||t[0]==\"null\"){std::cout<<0<<std::endl;return 0;}\nstd::vector<char>isn(n);for(long long i=0;i<n;++i)isn[i]=(t[i]==\"null\");\nstd::vector<std::array<long long,2>>ch(n,{-1,-1});\nlong long slot=1;std::deque<long long>bq;bq.push_back(0);\nwhile(!bq.empty()){long long u=bq.front();bq.pop_front();\nfor(int b=0;b<2&&slot<n;++b,++slot){if(!isn[slot]){ch[u][b]=slot;bq.push_back(slot);}}}\nstd::deque<std::pair<long long,long long>>q;q.push_back({0,1});long long dep=0;\nwhile(!q.empty()){auto[u,d]=q.front();q.pop_front();dep=std::max(dep,d);\nif(ch[u][0]>=0)q.push_back({ch[u][0],d+1});\nif(ch[u][1]>=0)q.push_back({ch[u][1],d+1});}\nstd::cout<<dep<<std::endl;}\n"
+ }
+}

@@ -1,0 +1,41 @@
+{
+ "id": "cp-011",
+ "title": "LRU 缓存",
+ "difficulty": "medium",
+ "tags": [
+  "设计",
+  "哈希表",
+  "双向链表"
+ ],
+ "statement": "设计一个 LRU（最近最少使用）缓存，支持两种操作：\n- `set k v`：写入键值；若键已存在则更新值并变为最近使用。\n- `get k`：查询；命中返回值并变为最近使用，未命中返回 -1。\n容量满时 `set` 淘汰最久未使用的键。\n（建议用哈希表 + 双向链表实现 O(1)；直接用 OrderedDict 会被面试官追问实现细节。）\n\n**输入格式**：第一行两个整数 capacity 和 m（1 ≤ capacity ≤ 100，1 ≤ m ≤ 10^5）；\n接下来 m 行，每行一个操作。\n\n**输出格式**：每个 `get` 操作输出一行结果。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "2 9\nset 1 1\nset 2 2\nget 1\nset 3 3\nget 2\nset 4 4\nget 1\nget 3\nget 4\n",
+   "output": "1\n-1\n-1\n3\n4",
+   "sample": true
+  },
+  {
+   "input": "1 4\nset 5 100\nget 5\nset 6 200\nget 5\n",
+   "output": "100\n-1",
+   "sample": false
+  },
+  {
+   "input": "2 6\nset 1 10\nset 1 20\nget 1\nset 2 0\nset 3 30\nget 1\n",
+   "output": "20\n-1",
+   "sample": false
+  },
+  {
+   "input": "3 3\nget 9\nget 8\nget 7\n",
+   "output": "-1\n-1\n-1",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "import sys\ncap,m=map(int,input().split())\nclass Node:\n    __slots__=('k','v','prev','nxt')\nd={}\nhead=Node();tail=Node();head.nxt=tail;tail.prev=head\ndef rm(x):\n    x.prev.nxt=x.nxt;x.nxt.prev=x.prev\ndef front(x):\n    x.nxt=head.nxt;x.prev=head;head.nxt.prev=x;head.nxt=x\nout=[]\nfor line in sys.stdin:\n    parts=line.split()\n    if not parts: continue\n    if parts[0]=='set':\n        k,v=int(parts[1]),int(parts[2])\n        if k in d:\n            d[k].v=v;rm(d[k]);front(d[k])\n        else:\n            if len(d)==cap:\n                old=tail.prev;rm(old);del d[old.k]\n            x=Node();x.k=k;x.v=v;d[k]=x;front(x)\n    else:\n        k=int(parts[1])\n        if k in d:\n            x=d[k];rm(x);front(x);out.append(str(x.v))\n        else: out.append(\"-1\")\nprint(\"\\n\".join(out))\n",
+  "cpp": "#include <bits/stdc++.h>\nstruct Node{long long k,v;Node*p,*n;};\nint main(){long long cap,m;std::cin>>cap>>m;\nstd::unordered_map<long long,Node*>d;Node*head=new Node();Node*tail=new Node();\nhead->n=tail;tail->p=head;\nauto rm=[](Node*x){x->p->n=x->n;x->n->p=x->p;};\nauto front=[&](Node*x){x->n=head->n;x->p=head;head->n->p=x;head->n=x;};\nwhile(m--){std::string op;long long k;std::cin>>op>>k;\nif(op==\"set\"){long long v;std::cin>>v;\nauto it=d.find(k);\nif(it!=d.end()){it->second->v=v;rm(it->second);front(it->second);}\nelse{if((long long)d.size()==cap){Node*old=tail->p;rm(old);d.erase(old->k);}\nNode*x=new Node{k,v,nullptr,nullptr};d[k]=x;front(x);}}\nelse{auto it=d.find(k);\nif(it==d.end())std::cout<<-1<<std::endl;\nelse{Node*x=it->second;rm(x);front(x);std::cout<<x->v<<std::endl;}}}}\n"
+ }
+}

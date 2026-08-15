@@ -1,0 +1,56 @@
+{
+ "id": "cp-009",
+ "title": "岛屿数量",
+ "difficulty": "medium",
+ "tags": [
+  "图",
+  "深度优先搜索",
+  "广度优先搜索"
+ ],
+ "statement": "一个二维网格由 `0`（水）和 `1`（陆地）组成，求岛屿的数量。\n岛屿是水平或垂直相邻的陆地连通块（斜向不算相邻）。\n\n**输入格式**：第一行两个整数 m 和 n（1 ≤ m, n ≤ 500）；\n接下来 m 行每行 n 个字符（0 或 1，无空格）。\n\n**输出格式**：一个整数，岛屿数量。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "4 5\n11110\n11010\n11000\n00000\n",
+   "output": "1",
+   "sample": true
+  },
+  {
+   "input": "4 5\n11000\n11000\n00100\n00011\n",
+   "output": "3",
+   "sample": false
+  },
+  {
+   "input": "1 1\n0\n",
+   "output": "0",
+   "sample": false
+  },
+  {
+   "input": "1 1\n1\n",
+   "output": "1",
+   "sample": false
+  },
+  {
+   "input": "3 3\n101\n010\n101\n",
+   "output": "5",
+   "sample": false
+  },
+  {
+   "input": "3 3\n111\n111\n111\n",
+   "output": "1",
+   "sample": false
+  },
+  {
+   "input": "5 5\n10000\n01110\n01110\n01110\n00001\n",
+   "output": "3",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "import sys\nsys.setrecursionlimit(300000)\ndef main():\n    m,n=map(int,input().split())\n    g=[input().strip() for _ in range(m)]\n    seen=[[False]*n for _ in range(m)]\n    cnt=0\n    for i in range(m):\n        for j in range(n):\n            if g[i][j]=='1' and not seen[i][j]:\n                cnt+=1\n                st=[(i,j)];seen[i][j]=True\n                while st:\n                    x,y=st.pop()\n                    for dx,dy in((1,0),(-1,0),(0,1),(0,-1)):\n                        nx,ny=x+dx,y+dy\n                        if 0<=nx<m and 0<=ny<n and g[nx][ny]=='1' and not seen[nx][ny]:\n                            seen[nx][ny]=True;st.append((nx,ny))\n    print(cnt)\nmain()\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){long long m,n;std::cin>>m>>n;std::vector<std::string>g(m);\nfor(auto&row:g)std::cin>>row;std::vector<std::vector<char>>seen(m,std::vector<char>(n,0));\nlong long cnt=0;std::deque<std::pair<long long,long long>>q;\nfor(long long i=0;i<m;++i)for(long long j=0;j<n;++j){\nif(g[i][j]=='1'&&!seen[i][j]){++cnt;q.clear();q.push_back({i,j});seen[i][j]=1;\nwhile(!q.empty()){auto[x,y]=q.front();q.pop_front();\nlong long dx[4]={1,-1,0,0},dy[4]={0,0,1,-1};\nfor(int d=0;d<4;++d){long long nx=x+dx[d],ny=y+dy[d];\nif(nx>=0&&nx<m&&ny>=0&&ny<n&&g[nx][ny]=='1'&&!seen[nx][ny]){seen[nx][ny]=1;q.push_back({nx,ny});}}}}}\nstd::cout<<cnt<<std::endl;}\n"
+ }
+}

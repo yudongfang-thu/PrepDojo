@@ -1,0 +1,61 @@
+{
+ "id": "cp-002",
+ "title": "最长无重复字符子串",
+ "difficulty": "medium",
+ "tags": [
+  "字符串",
+  "滑动窗口",
+  "哈希表"
+ ],
+ "statement": "给定一个仅含小写英文字母的字符串，求其中不含重复字符的最长连续子串的长度。\n\n**输入格式**：一行字符串 s（1 ≤ |s| ≤ 10^6）。\n\n**输出格式**：一个整数，最长无重复字符子串的长度。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "abcabcbb\n",
+   "output": "3",
+   "sample": true
+  },
+  {
+   "input": "bbbbb\n",
+   "output": "1",
+   "sample": false
+  },
+  {
+   "input": "pwwkew\n",
+   "output": "3",
+   "sample": false
+  },
+  {
+   "input": "abcdefg\n",
+   "output": "7",
+   "sample": false
+  },
+  {
+   "input": "abba\n",
+   "output": "2",
+   "sample": false
+  },
+  {
+   "input": "a\n",
+   "output": "1",
+   "sample": false
+  },
+  {
+   "input": "tmmzuxt\n",
+   "output": "5",
+   "sample": false
+  },
+  {
+   "input": "dvdf\n",
+   "output": "3",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "s=input().strip()\nlast={};ans=0;left=0\nfor i,c in enumerate(s):\n    if c in last and last[c]>=left: left=last[c]+1\n    last[c]=i\n    ans=max(ans,i-left+1)\nprint(ans)\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){std::string s;std::cin>>s;std::vector<int> last(26,-1);int ans=0,left=0;\nfor(int i=0;i<(int)s.size();++i){int c=s[i]-'a';\nif(last[c]>=left)left=last[c]+1;last[c]=i;ans=std::max(ans,i-left+1);}\nstd::cout<<ans<<std::endl;}\n"
+ }
+}

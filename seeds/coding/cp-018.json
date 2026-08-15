@@ -1,0 +1,50 @@
+{
+ "id": "cp-018",
+ "title": "前 K 个高频元素",
+ "difficulty": "medium",
+ "tags": [
+  "哈希表",
+  "堆"
+ ],
+ "statement": "给定整数数组和 k，输出出现频率前 k 高的元素。\n频率相同时元素值小的排在前面。\n\n**输入格式**：第一行两个整数 n 和 k（1 ≤ n ≤ 10^5, 1 ≤ k ≤ 不同元素数）；\n第二行 n 个整数。\n\n**输出格式**：一行 k 个整数，空格分隔。",
+ "languages": [
+  "python",
+  "cpp"
+ ],
+ "test_cases": [
+  {
+   "input": "6 2\n1 1 1 2 2 3\n",
+   "output": "1 2",
+   "sample": true
+  },
+  {
+   "input": "1 1\n1\n",
+   "output": "1",
+   "sample": false
+  },
+  {
+   "input": "8 3\n4 4 4 6 6 7 7 7\n",
+   "output": "4 7 6",
+   "sample": false
+  },
+  {
+   "input": "5 3\n5 -3 5 -3 9\n",
+   "output": "-3 5 9",
+   "sample": false
+  },
+  {
+   "input": "7 2\n1 2 3 1 2 3 3\n",
+   "output": "3 1",
+   "sample": false
+  },
+  {
+   "input": "4 4\n9 8 7 6\n",
+   "output": "6 7 8 9",
+   "sample": false
+  }
+ ],
+ "reference": {
+  "python": "from collections import Counter\nn,k=map(int,input().split());a=list(map(int,input().split()))\nc=Counter(a)\nitems=sorted(c.items(),key=lambda kv:(-kv[1],kv[0]))\nprint(\" \".join(str(x) for x,_ in items[:k]))\n",
+  "cpp": "#include <bits/stdc++.h>\nint main(){long long n,k;std::cin>>n>>k;std::unordered_map<long long,long long>c;\nfor(long long i=0;i<n;++i){long long x;std::cin>>x;++c[x];}\nstd::vector<std::pair<long long,long long>>v(c.begin(),c.end());\nstd::sort(v.begin(),v.end(),[](auto&a,auto&b){\nreturn a.second!=b.second?a.second>b.second:a.first<b.first;});\nfor(long long i=0;i<k;++i)std::cout<<v[i].first<<(i+1<k?\" \":\"\\n\");}\n"
+ }
+}
