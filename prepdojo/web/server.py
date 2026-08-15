@@ -259,6 +259,141 @@ def create_app(cfg: Config, db: DB) -> FastAPI:
                                  headers={"Cache-Control": "no-cache",
                                           "X-Accel-Buffering": "no"})
 
+    # ---------- Coding 题导入：JSON 直接导入 / AI 适配目录 ----------
+
+    @app.post("/api/problems/import_json")
+    async def problems_import_json(body: dict):
+        """从目录导入符合 schema 的 JSON 题目文件（无需 AI，含用例直接入库）。"""
+        path = (body.get("path") or "").strip()
+        if not path:
+            raise HTTPException(400, "缺少 path")
+        root = Path(path).expanduser()
+        if not root.is_dir():
+            raise HTTPException(400, f"目录不存在: {root}")
+
+        import asyncio
+        import json as _json
+        import queue as _q
+
+        loop = asyncio.get_event_loop()
+
+        async def gen():
+            q: _q.Queue = _q.Queue()
+
+            def run():
+                try:
+                    files = sorted(root.glob("*.json"))
+                    q.put(("total", {"n": len(files)}))
+                    ok = fail = 0
+                    for fp in files:
+                        try:
+                            obj = _json.loads(fp.read_text(encoding="utf-8"))
+                            cases = [{"input": c["input"], "output": c["output"],
+                                      "sample": c.get("sample", False)}
+                                     for c in obj["test_cases"]]
+                            db.upsert_problem(obj, cases)
+                            ok += 1
+                            q.put(("imported", {"file": fp.name,
+                                                "id": obj.get("id", "?"),
+                                                "title": obj.get("title", "")}))
+                        except Exception as e:
+                            fail += 1
+                            q.put(("failed", {"file": fp.name, "error": str(e)[:200]}))
+                    q.put(("all_done", {"ok": ok, "fail": fail}))
+                except Exception as e:
+                    q.put(("error", {"message": str(e)[:300]}))
+                finally:
+                    q.put(("_end", {}))
+
+            task = loop.run_in_executor(None, run)
+            while True:
+                kind, data = await loop.run_in_executor(None, q.get)
+                if kind == "_end":
+                    break
+                yield "data: " + json.dumps({"event": kind, **data},
+                                            ensure_ascii=False) + "\n\n"
+            await task
+
+        from fastapi.responses import StreamingResponse
+
+        return StreamingResponse(gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache",
+                                          "X-Accel-Buffering": "no"})
+
+    @app.post("/api/problems/adapt")
+    async def problems_adapt(body: dict):
+        """AI 适配导入：目录中每个 .md/.txt 视为一道题的描述，
+        AI 生成参考解+用例并沙箱自洽验证后入库。"""
+        path = (body.get("path") or "").strip()
+        limit = int(body.get("limit") or 0)
+        if not path:
+            raise HTTPException(400, "缺少 path")
+        root = Path(path).expanduser()
+        if not root.is_dir():
+            raise HTTPException(400, f"目录不存在: {root}")
+        llm = _llm(cfg)
+        if llm is None:
+            raise HTTPException(503, _LLM_HINT)
+        from ..problem_gen import generate_problem
+
+        import asyncio
+        import queue as _q
+
+        loop = asyncio.get_event_loop()
+
+        async def gen():
+            q: _q.Queue = _q.Queue()
+
+            def on_event(kind: str, data: dict) -> None:
+                q.put((kind, data))
+
+            def run():
+                try:
+                    files = sorted(list(root.glob("*.md")) + list(root.glob("*.txt")))
+                    if limit > 0:
+                        files = files[:limit]
+                    q.put(("total", {"n": len(files)}))
+                    ok = fail = 0
+                    for fp in files:
+                        q.put(("file_start", {"file": fp.name}))
+                        brief = fp.read_text(encoding="utf-8", errors="ignore")[:4000]
+                        brief = ("根据以下题目描述生成判题题（保留题意，规范输入输出格式，"
+                                 f"设计参考解与用例）：\n\n{brief}")
+                        try:
+                            out = generate_problem(
+                                llm, brief, cpp_compiler=cfg.cpp_compiler,
+                                on_event=on_event)
+                            db.upsert_problem(out["problem"], out["cases"])
+                            ok += 1
+                            q.put(("saved", {"file": fp.name,
+                                             "problem_id": out["problem"]["id"],
+                                             "title": out["problem"]["title"],
+                                             "n_cases": len(out["cases"])}))
+                        except Exception as e:
+                            fail += 1
+                            q.put(("failed", {"file": fp.name,
+                                              "error": str(e)[:250]}))
+                    q.put(("all_done", {"ok": ok, "fail": fail}))
+                except Exception as e:
+                    q.put(("error", {"message": str(e)[:300]}))
+                finally:
+                    q.put(("_end", {}))
+
+            task = loop.run_in_executor(None, run)
+            while True:
+                kind, data = await loop.run_in_executor(None, q.get)
+                if kind == "_end":
+                    break
+                yield "data: " + json.dumps({"event": kind, **data},
+                                            ensure_ascii=False) + "\n\n"
+            await task
+
+        from fastapi.responses import StreamingResponse
+
+        return StreamingResponse(gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache",
+                                          "X-Accel-Buffering": "no"})
+
     @app.get("/api/stats")
     def stats():
         return db.stats()

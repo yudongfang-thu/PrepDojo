@@ -745,6 +745,100 @@ $("gen-start-btn").onclick = async () => {
 function goGenProblem(pid) { showPage("coding"); openProblem(pid); }
 window.goGenProblem = goGenProblem;
 
+// ---------- AI 适配导入（批量）与 JSON 导入（共用 SSE 处理器） ----------
+async function runImportStream(url, body, handlers) {
+  const resp = await fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    let msg = resp.statusText;
+    try { msg = (await resp.json()).detail || msg; } catch {}
+    throw new Error(msg);
+  }
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
+      if (!chunk.startsWith("data: ")) continue;
+      const ev = JSON.parse(chunk.slice(6));
+      (handlers[ev.event] || (() => {}))(ev);
+    }
+  }
+}
+
+function kbLine(container, text, cls = "") {
+  const d = document.createElement("div");
+  if (cls) d.className = cls;
+  d.textContent = text;
+  container.appendChild(d);
+  container.scrollTop = 1e9;
+  return d;
+}
+
+$("adapt-start-btn").onclick = async () => {
+  const path = $("adapt-path").value.trim();
+  if (!path) return alert("请填写题目描述目录路径");
+  const limit = parseInt($("adapt-limit").value, 10) || 0;
+  const btn = $("adapt-start-btn");
+  btn.disabled = true; btn.textContent = "适配中…";
+  $("gen-progress-card").classList.remove("hidden");
+  const live = $("gen-live");
+  live.innerHTML = "";
+  let thinkBox = null;
+  try {
+    await runImportStream("/api/problems/adapt", { path, limit }, {
+      total: ev => kbLine(live, `共 ${ev.n} 个题目描述文件`, "file-line"),
+      file_start: ev => { kbLine(live, `📄 ${ev.file}`, "file-line"); thinkBox = null; },
+      thinking_delta: ev => {
+        if (!thinkBox) thinkBox = makeThinkingBox(live);
+        appendThinking(thinkBox, ev.text);
+      },
+      content_delta: ev => { if (thinkBox) appendThinking(thinkBox, ev.text); },
+      verify_case: ev => kbLine(live, `  ✅ 沙箱验证通过：${(ev.detail || "").slice(0, 80)}`),
+      verify_fix: ev => kbLine(live, `  ⚠️ 修复中：${(ev.errors || "").slice(0, 80)}`, "fail-line"),
+      saved: ev => {
+        const d = kbLine(live, `  🎉 入库：${ev.title}（${ev.n_cases} 用例）`);
+        const b = document.createElement("button");
+        b.className = "btn"; b.textContent = "去刷 →";
+        b.style.cssText = "padding:2px 8px;font-size:11px;margin-left:8px";
+        b.onclick = () => goGenProblem(ev.problem_id);
+        d.appendChild(b);
+      },
+      failed: ev => kbLine(live, `  ❌ ${ev.file}: ${ev.error}`, "fail-line"),
+      all_done: ev => kbLine(live, `完成：成功 ${ev.ok} / 失败 ${ev.fail}`, "file-line"),
+      error: ev => kbLine(live, `❌ ${ev.message}`, "fail-line"),
+    });
+  } catch (e) { kbLine(live, "❌ " + e.message, "fail-line"); }
+  finally { btn.disabled = false; btn.textContent = "开始适配导入"; }
+};
+
+$("jsonimp-start-btn").onclick = async () => {
+  const path = $("jsonimp-path").value.trim();
+  if (!path) return alert("请填写 JSON 目录路径");
+  const btn = $("jsonimp-start-btn");
+  btn.disabled = true; btn.textContent = "导入中…";
+  $("gen-progress-card").classList.remove("hidden");
+  const live = $("gen-live");
+  live.innerHTML = "";
+  try {
+    await runImportStream("/api/problems/import_json", { path }, {
+      total: ev => kbLine(live, `共 ${ev.n} 个 JSON 文件`, "file-line"),
+      imported: ev => kbLine(live, `✅ ${ev.file} → ${ev.id} ${ev.title}`),
+      failed: ev => kbLine(live, `❌ ${ev.file}: ${ev.error}`, "fail-line"),
+      all_done: ev => kbLine(live, `完成：成功 ${ev.ok} / 失败 ${ev.fail}`, "file-line"),
+      error: ev => kbLine(live, `❌ ${ev.message}`, "fail-line"),
+    });
+  } catch (e) { kbLine(live, "❌ " + e.message, "fail-line"); }
+  finally { btn.disabled = false; btn.textContent = "导入"; }
+};
+
 async function loadSources() {
   const d = await api("/api/sources");
   const tb = $("kb-sources-table").querySelector("tbody");

@@ -112,6 +112,14 @@ details.thinking { margin:4px 0; }
 details.thinking summary { cursor:pointer; color:var(--muted); font-style:italic; font-size:12px; user-select:none; }
 details.thinking .th-content { white-space:pre-wrap; color:var(--muted); font-style:italic;
   border-left:2px solid var(--border); padding-left:10px; margin-top:4px; max-height:140px; overflow:auto; }
+
+/* 操作指南 */
+.guide-box { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px 16px; }
+.guide-box summary { cursor:pointer; font-weight:600; font-size:14.5px; }
+.guide-box .guide-content { margin-top:10px; font-size:13.5px; line-height:1.8; color:var(--muted); }
+.guide-box .guide-content b { color:var(--text); }
+.guide-box .guide-content ul { margin:6px 0; padding-left:20px; }
+.guide-box .guide-content li { margin:3px 0; }
 </style>
 </head>
 <body>
@@ -354,17 +362,50 @@ details.thinking .th-content { white-space:pre-wrap; color:var(--muted); font-st
 
     <!-- Coding 题生成 -->
     <div id="kb-coding-view" class="hidden">
-      <div class="card">
-        <b>AI 出题（自动沙箱验证）</b>
-        <p class="muted" style="font-size:13px;margin:6px 0 10px">
-          粘贴一道题的描述（你自己的题、笔记里的题），或只写出题要求（如"出一道单调栈的中等题"）。
-          AI 生成题面与参考解后，<b>系统会在本地沙箱实跑参考解生成全部期望输出</b>，验证自洽才入库——期望输出永远来自真实运行，不来自 AI 猜测。</p>
+      <details class="guide-box">
+        <summary>📚 操作指南（八股与 Coding 导入的说明 + 推荐题源）</summary>
+        <div class="guide-content">
+          <p><b>① AI 出题</b>（下方）：粘贴一道题的描述，或只写出题要求（如"出一道单调栈中等题"）。AI 生成题面与参考解后，系统在本地沙箱实跑参考解生成全部期望输出——<b>期望输出永远来自真实运行，不来自 AI 猜测</b>；参考解跑挂会自动喂回 AI 修复。</p>
+          <p><b>② AI 适配导入</b>：把题目描述保存为 <code>.md</code> / <code>.txt</code>（一题一文件）放进一个目录，指向该目录即可批量导入。每道题都会走"AI 生成参考解+用例 → 沙箱验证自洽"流程，任何来源的题面文本都能变成可判题的题。</p>
+          <p><b>③ JSON 直接导入</b>：已有结构化题目（含测试用例）可按 <code>seeds/coding/cp-001.json</code> 的格式（字段：id / title / difficulty / tags / statement / test_cases[{input, output}]）放入目录直接导入，不消耗 AI。</p>
+          <p><b>推荐题源</b>（本仓库不分发任何题目内容，请自行下载到本地）：</p>
+          <ul>
+            <li><a href="https://github.com/doocs/leetcode" target="_blank">doocs/leetcode</a>（MIT，74k+ star）：多语言题解与题面，可整库 clone 后挑选若干题保存为 md 导入</li>
+            <li><a href="https://github.com/OI-wiki/OI-wiki" target="_blank">OI-wiki</a>（CC BY-SA 4.0）：算法知识库，更适合作为八股知识导入</li>
+            <li>自己的刷题笔记 / 任何文本形式的题目描述</li>
+          </ul>
+          <p class="muted">八股导入指南：支持 PDF（需文字层，扫描图自动跳过）/ Markdown / TXT，递归扫描子目录；按文件内容哈希增量去重，重复导入只处理新文件。成本参考：92 个 PDF（51 万字）≈ 100 万 token ≈ 几元。首次建议先限制 2-3 个文件试跑。</p>
+        </div>
+      </details>
+
+      <div class="card" style="margin-top:12px">
+        <b>① AI 出题（单题）</b>
+        <p class="muted" style="font-size:13px;margin:6px 0 10px">粘贴题目描述或写出题要求 → AI 生成 → 沙箱自洽验证 → 入库。</p>
         <textarea class="answer" id="gen-brief" placeholder="例1：出一道关于滑动窗口最大值的题，hard 难度。&#10;例2：粘贴你的题目描述（含输入输出格式更佳）…" style="height:110px"></textarea>
         <div class="toolbar">
           <button class="btn primary" id="gen-start-btn">生成题目</button>
           <span class="muted" id="gen-status"></span>
         </div>
       </div>
+
+      <div class="card" style="margin-top:14px">
+        <b>② AI 适配导入（批量，一题一文件的 .md/.txt 目录）</b>
+        <div class="toolbar" style="margin-top:8px">
+          <input id="adapt-path" placeholder="题目描述目录路径" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px">
+          <input id="adapt-limit" type="number" min="0" placeholder="限制数量" style="width:100px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px" title="0 = 全部；首次建议 2-3">
+          <button class="btn primary" id="adapt-start-btn">开始适配导入</button>
+        </div>
+        <p class="muted" style="font-size:12.5px;margin:8px 0 0">每题消耗 1-3 万 token（含沙箱验证与可能的修复轮）。</p>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <b>③ JSON 直接导入（含用例，不消耗 AI）</b>
+        <div class="toolbar" style="margin-top:8px">
+          <input id="jsonimp-path" placeholder="JSON 题目文件目录" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px">
+          <button class="btn primary" id="jsonimp-start-btn">导入</button>
+        </div>
+      </div>
+
       <div id="gen-progress-card" class="card hidden" style="margin-top:14px">
         <b>生成过程</b>
         <div id="gen-live" class="live-log"></div>
