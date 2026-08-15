@@ -122,7 +122,6 @@ async function openProblem(pid) {
   const lang = $("lang-select").value;
   setEditorCode(TEMPLATES[lang], lang);
   $("result-area").innerHTML = "";
-  $("review-btn").disabled = true;
   lastSubmission = null;
   coachHistory = [];
   const cm = $("coach-messages");
@@ -154,7 +153,6 @@ $("submit-btn").onclick = async () => {
     });
     lastSubmission = r;
     renderResult(r);
-    $("review-btn").disabled = false;
   } catch (e) {
     $("result-area").innerHTML = `<p class="verdict-RE">提交失败：${esc(e.message)}</p>`;
   } finally {
@@ -179,28 +177,85 @@ function renderResult(r) {
   $("result-area").innerHTML = html;
 }
 
-$("review-btn").onclick = async () => {
-  if (!lastSubmission) return;
-  const btn = $("review-btn");
-  btn.disabled = true; btn.textContent = "AI 点评中…";
+// ---------- AI 判题（工具增强判定报告，SSE 流式） ----------
+$("ai-judge-btn").onclick = async () => {
+  if (!currentProblem) return;
+  const code = getEditorCode();
+  if (!code.trim()) return alert("编辑器代码为空");
+  const btn = $("ai-judge-btn");
+  btn.disabled = true; btn.textContent = "🤖 AI 判题中…";
+  const area = $("result-area");
+  area.insertAdjacentHTML("beforeend",
+    '<div id="ai-judge-live" class="card" style="margin-top:14px"><b>🤖 AI 判题</b><div class="tool-log"></div></div>');
+  const live = area.querySelector("#ai-judge-live .tool-log");
   try {
-    const r = await api(`/api/review/${lastSubmission.submission_id}`, { method: "POST" });
-    const rv = r.review;
-    $("result-area").insertAdjacentHTML("beforeend", `
-      <h2 class="sec" style="margin-top:16px">AI 点评</h2>
-      <div class="card"><p><b>${esc(rv.summary || "")}</b></p>
-      <p>复杂度：时间 ${esc(rv.complexity?.time || "未知")} · 空间 ${esc(rv.complexity?.space || "未知")}</p>
-      ${rv.good_points ? "<p>✅ 做得好</p>" + rv.good_points.map(x=>`<div class="per-point hit">${esc(x)}</div>`).join("") : ""}
-      ${rv.issues ? "<p>⚠️ 问题</p>" + rv.issues.map(x=>`<div class="per-point miss">${esc(x)}</div>`).join("") : ""}
-      ${rv.interview_tips ? "<p>🎤 面试官可能追问</p>" + rv.interview_tips.map(x=>`<div class="per-point">${esc(x)}</div>`).join("") : ""}
-      ${rv.improved_hint && rv.improved_hint !== "无" ? `<p class="muted">改进方向：${esc(rv.improved_hint)}</p>` : ""}
-      </div>`);
+    const resp = await fetch(`/api/ai_judge/${currentProblem.id}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, language: $("lang-select").value,
+        last_submission_id: lastSubmission ? lastSubmission.submission_id : null }),
+    });
+    if (!resp.ok) {
+      let msg = resp.statusText;
+      try { msg = (await resp.json()).detail || msg; } catch {}
+      throw new Error(msg);
+    }
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
+        if (!chunk.startsWith("data: ")) continue;
+        const ev = JSON.parse(chunk.slice(6));
+        if (ev.event === "tool_start") {
+          live.insertAdjacentHTML("beforeend",
+            `<div class="coach-msg tool">⚙️ ${ev.name}(${(ev.args.code || ev.args.problem_id || "")
+              .slice(0, 50).replace(/\n/g, "⏎")}…)</div>`);
+        } else if (ev.event === "tool_done") {
+          live.insertAdjacentHTML("beforeend",
+            `<div class="coach-msg tool">✅ ${esc(ev.summary)}</div>`);
+        } else if (ev.event === "report") {
+          renderAiJudgeReport(live, ev.report);
+        } else if (ev.event === "report_raw") {
+          live.insertAdjacentHTML("beforeend",
+            `<div class="coach-msg assistant">${esc(ev.text)}</div>`);
+        } else if (ev.event === "error") {
+          live.insertAdjacentHTML("beforeend",
+            `<div class="coach-msg tool">❌ ${esc(ev.message)}</div>`);
+        }
+      }
+    }
   } catch (e) {
-    alert("点评失败：" + e.message);
+    live.insertAdjacentHTML("beforeend", `<div class="coach-msg tool">❌ ${esc(e.message)}</div>`);
   } finally {
-    btn.disabled = false; btn.textContent = "AI 点评";
+    btn.disabled = false; btn.textContent = "🤖 AI 判题";
   }
 };
+
+function renderAiJudgeReport(container, r) {
+  const bs = r.better_solution || {};
+  container.insertAdjacentHTML("beforeend", `
+    <div class="card" style="margin-top:10px">
+      <p style="font-size:16px"><b>判定：<span class="verdict-${esc(r.sandbox_verdict)}">${esc(r.sandbox_verdict)}</span></b>
+      　<span class="muted">${esc(r.summary || "")}</span></p>
+      <p>复杂度：时间 <b>${esc(r.complexity?.time || "未知")}</b> · 空间 <b>${esc(r.complexity?.space || "未知")}</b></p>
+      <p>🔬 边界分析</p>
+      <div class="per-point">${esc(r.boundary_analysis || "—")}</div>
+      ${bs.exists ? `
+      <p>🚀 更优解法：${esc(bs.name)}（${esc(bs.complexity)}）</p>
+      <div class="per-point hit"><b>为什么更优：</b>${esc(bs.why_better)}<br><b>思路提示：</b>${esc(bs.hint)}</div>` : ""}
+      ${r.related_knowledge && r.related_knowledge.length ? `
+      <p>📚 知识点（更优解法背后）</p>
+      ${r.related_knowledge.map(x=>`<div class="per-point">${esc(x)}</div>`).join("")}` : ""}
+      ${r.interview_tips && r.interview_tips.length ? `
+      <p>🎤 面试官视角</p>
+      ${r.interview_tips.map(x=>`<div class="per-point">${esc(x)}</div>`).join("")}` : ""}
+    </div>`);
+}
 
 // ---------- AI 讲题教练（SSE 流式 + 沙箱工具轨迹） ----------
 let coachHistory = [];

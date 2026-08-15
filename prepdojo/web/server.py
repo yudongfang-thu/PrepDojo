@@ -252,6 +252,81 @@ def create_app(cfg: Config, db: DB) -> FastAPI:
                           result.get("score", 0), result, mode="follow_up")
         return result
 
+    # ---------- AI 判题（工具增强的结构化判定报告，SSE） ----------
+
+    @app.post("/api/ai_judge/{pid}")
+    async def ai_judge(pid: str, body: dict):
+        problem = db.get_problem(pid)
+        if not problem:
+            raise HTTPException(404, "题目不存在")
+        llm = _llm(cfg)
+        if llm is None:
+            raise HTTPException(503, _LLM_HINT)
+        from ..chat import (AI_JUDGE_SYSTEM, SandboxTools, ai_judge_report,
+                            build_problem_context, chat_step)
+
+        code = body.get("code") or ""
+        language = body.get("language", "python")
+        last_verdict, last_detail = None, None
+        sid = body.get("last_submission_id")
+        if sid:
+            sub = db.get_submission(int(sid))
+            if sub:
+                last_verdict = sub["verdict"]
+                cs = sub["detail"].get("cases", [])
+                last_detail = "\n".join(
+                    f"用例{c.get('idx')}: {c.get('verdict')}" for c in cs[:12])
+
+        context = build_problem_context(problem, code, language, last_verdict, last_detail)
+        history = [
+            {"role": "system", "content": AI_JUDGE_SYSTEM + "\n\n" + context},
+            {"role": "user", "content": "请判定我这份代码（先用工具验证，再出报告）。"},
+        ]
+        tools = SandboxTools(
+            get_problem=lambda p: db.get_problem(p),
+            load_cases=lambda p: _load_cases(db, p),
+            cpp_compiler=cfg.cpp_compiler,
+        )
+
+        import asyncio
+        import queue as _q
+
+        loop = asyncio.get_event_loop()
+
+        async def gen():
+            q: _q.Queue = _q.Queue()
+
+            def on_event(kind: str, data: dict) -> None:
+                q.put((kind, data))
+
+            def run():
+                try:
+                    result = chat_step(llm, tools, history, on_event=on_event)
+                    report = ai_judge_report(result.reply)
+                    if report:
+                        q.put(("report", {"report": report}))
+                    else:
+                        q.put(("report_raw", {"text": result.reply}))
+                except Exception as e:
+                    q.put(("error", {"message": str(e)}))
+                finally:
+                    q.put(("done", {}))
+
+            task = loop.run_in_executor(None, run)
+            while True:
+                kind, data = await loop.run_in_executor(None, q.get)
+                yield "data: " + json.dumps({"event": kind, **data},
+                                            ensure_ascii=False) + "\n\n"
+                if kind in ("done", "error"):
+                    break
+            await task
+
+        from fastapi.responses import StreamingResponse
+
+        return StreamingResponse(gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache",
+                                          "X-Accel-Buffering": "no"})
+
     # ---------- AI 讲题教练（沙箱工具循环 + SSE 流式） ----------
 
     @app.post("/api/chat/problem/{pid}")

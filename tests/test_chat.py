@@ -90,3 +90,26 @@ def test_chat_endpoint_needs_llm(tmp_path):
     assert r.status_code == 503
     assert c.post("/api/chat/problem/cp-xxx", json={
         "messages": [{"role": "user", "content": "hi"}]}).status_code == 404
+
+
+def test_ai_judge_prompt_and_report_parse():
+    from prepdojo.chat import AI_JUDGE_SYSTEM, ai_judge_report
+    assert "run_problem_case" in AI_JUDGE_SYSTEM
+    assert "sandbox_verdict" in AI_JUDGE_SYSTEM
+    assert "related_knowledge" in AI_JUDGE_SYSTEM
+    # 报告解析：带壳 / 纯 JSON / 垃圾
+    good = '```json\n{"sandbox_verdict": "AC", "complexity": {"time": "O(n)"}}\n```'
+    assert ai_judge_report(good)["sandbox_verdict"] == "AC"
+    assert ai_judge_report('前言 {"sandbox_verdict": "WA"} 后记')["sandbox_verdict"] == "WA"
+    assert ai_judge_report("not json at all") is None
+
+
+def test_ai_judge_endpoint_guard(tmp_path):
+    db = DB(tmp_path / "aj.db")
+    load_seed_dir(db, SEEDS)
+    cfg = Config(api_key="", db_path=tmp_path / "aj.db")
+    c = TestClient(create_app(cfg, db))
+    assert c.post("/api/ai_judge/cp-001",
+                  json={"code": "print(1)", "language": "python"}).status_code == 503
+    assert c.post("/api/ai_judge/cp-xxx",
+                  json={"code": "print(1)", "language": "python"}).status_code == 404
