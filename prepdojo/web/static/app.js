@@ -75,18 +75,34 @@ async function loadProblems() {
   const d = await api("/api/problems");
   problems = d.problems;
   const tb = $("problem-table").querySelector("tbody");
-  tb.innerHTML = problems.map(p => `
+  tb.innerHTML = problems.map(p => {
+    const st = p.ever_ac ? '<span title="已攻克">✅</span>'
+      : (p.attempts > 0 ? `<span title="未通过（${p.attempts} 次提交）">❌</span>` : '<span class="muted" title="没做过">⬜</span>');
+    return `
     <tr class="problem-row" data-id="${p.id}">
+      <td>${st}</td>
       <td class="muted">${p.id}</td>
       <td>${esc(p.title)}</td>
       <td><span class="badge ${p.difficulty}">${{easy:"简单",medium:"中等",hard:"困难"}[p.difficulty]||p.difficulty}</span></td>
       <td>${p.tags.map(t => `<span class="badge tag">${esc(t)}</span>`).join("")}</td>
       <td class="muted">${p.n_cases}</td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
   tb.querySelectorAll(".problem-row").forEach(tr => {
     tr.onclick = () => openProblem(tr.dataset.id);
   });
+  const ac = problems.filter(p => p.ever_ac).length;
+  const tried = problems.filter(p => p.attempts > 0).length;
+  $("problem-stat-brief").textContent =
+    `已攻克 ${ac}/${problems.length} · 做过 ${tried} · 错题 ${tried - ac}`;
 }
+
+$("wrong-drill-btn").onclick = async () => {
+  const d = await api("/api/problems/wrong");
+  if (!d.wrong.length) return alert("错题本是空的——提交过但未 AC 的题才会进错题本。");
+  const pick = d.wrong[Math.floor(Math.random() * d.wrong.length)];
+  openProblem(pick.id);
+};
 
 async function openProblem(pid) {
   currentProblem = await api("/api/problems/" + pid);
@@ -271,7 +287,133 @@ $("coach-input").addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.isComposing) coachSend();
 });
 
-// ---------- 八股 ----------
+// ---------- 八股：模式切换 ----------
+function setQuizMode(mode) {
+  const isLearn = mode === "learn";
+  $("quiz-mode-learn").className = "btn" + (isLearn ? " primary" : "");
+  $("quiz-mode-test").className = "btn" + (!isLearn ? " primary" : "");
+  $("quiz-learn-view").classList.toggle("hidden", !isLearn);
+  $("quiz-test-view").classList.toggle("hidden", isLearn);
+  if (isLearn) refreshLearnProgress();
+}
+$("quiz-mode-learn").onclick = () => setQuizMode("learn");
+$("quiz-mode-test").onclick = () => setQuizMode("test");
+
+async function refreshLearnProgress() {
+  try {
+    const p = await api("/api/cards/progress");
+    const pct = p.total ? Math.round(p.learned / p.total * 100) : 0;
+    $("learn-progress").textContent = p.total
+      ? `已学 ${p.learned}/${p.total}（${pct}%）` : "";
+  } catch {}
+}
+
+// ---------- 八股：学习模式 ----------
+let learnQueue = [], learnIdx = 0;
+
+async function loadLearnTags() {
+  try {
+    const d = await api("/api/tags");
+    d.tags.forEach(([t, n]) => {
+      const o = document.createElement("option");
+      o.value = t; o.textContent = `${t} (${n})`;
+      $("learn-tag-select").appendChild(o);
+    });
+  } catch {}
+}
+
+$("learn-start-btn").onclick = async () => {
+  const tags = $("learn-tag-select").value;
+  const n = parseInt($("learn-num").value, 10);
+  const d = await api(`/api/cards/learn?tags=${encodeURIComponent(tags)}&n=${n}`);
+  if (!d.cards.length) {
+    return alert("没有可学的卡：全部学完了（或题库为空，先 ingest）。");
+  }
+  learnQueue = d.cards; learnIdx = 0;
+  $("learn-session").classList.remove("hidden");
+  showLearnCard();
+};
+
+function showLearnCard() {
+  const c = learnQueue[learnIdx];
+  $("learn-progress-cnt").textContent = `第 ${learnIdx + 1} / ${learnQueue.length} 卡`;
+  $("learn-question").innerHTML =
+    `${c.topic_tags.map(t => `<span class="badge tag">${esc(t)}</span>`).join("")}` +
+    (c.learned ? ` <span class="badge easy">已学</span>` : "") +
+    `<br><br>${esc(c.question)}`;
+  $("learn-answer").classList.add("hidden");
+  $("learn-show-btn").classList.remove("hidden");
+  $("learn-done-btn").classList.add("hidden");
+  $("learn-later-btn").classList.add("hidden");
+  $("learn-explain-area").innerHTML = "";
+}
+
+$("learn-show-btn").onclick = () => {
+  const c = learnQueue[learnIdx];
+  $("learn-answer").classList.remove("hidden");
+  $("learn-show-btn").classList.add("hidden");
+  $("learn-done-btn").classList.remove("hidden");
+  $("learn-later-btn").classList.remove("hidden");
+  $("learn-points").innerHTML = c.answer_points.map(p => `<div class="per-point">${esc(p)}</div>`).join("");
+};
+
+$("learn-explain-btn").onclick = async () => {
+  const c = learnQueue[learnIdx];
+  const btn = $("learn-explain-btn");
+  btn.disabled = true; btn.textContent = "🧠 讲解生成中…";
+  try {
+    const r = await api(`/api/cards/${c.id}/explain`);
+    const e = r.explanation;
+    $("learn-explain-area").innerHTML = `
+      <div class="card" style="margin-top:12px">
+        <p><b>核心：</b>${esc(e.core)}</p>
+        <p style="white-space:pre-wrap">${esc(e.expanded)}</p>
+        ${e.analogy ? `<p>🔗 <b>类比：</b>${esc(e.analogy)}</p>` : ""}
+        ${e.mnemonic ? `<p>📌 <b>记忆锚点：</b>${esc(e.mnemonic)}</p>` : ""}
+        ${e.related && e.related.length ? `<p class="muted">相关：${e.related.map(esc).join(" · ")}</p>` : ""}
+        ${r.cached ? '<p class="muted" style="font-size:11px">（缓存）</p>' : ""}
+      </div>`;
+  } catch (err) {
+    alert("讲解失败：" + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "🧠 AI 讲解";
+  }
+};
+
+$("learn-done-btn").onclick = async () => {
+  const c = learnQueue[learnIdx];
+  try {
+    await api(`/api/cards/${c.id}/learn`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ learned: true }),
+    });
+    c.learned = true;
+    refreshLearnProgress();
+  } catch (e) { alert("标记失败：" + e.message); }
+  learnNext();
+};
+
+$("learn-later-btn").onclick = () => learnNext();
+$("learn-next-btn").onclick = () => learnNext();
+$("learn-prev-btn").onclick = () => {
+  if (learnIdx > 0) { learnIdx -= 1; showLearnCard(); }
+};
+function learnNext() {
+  learnIdx += 1;
+  if (learnIdx >= learnQueue.length) {
+    $("learn-session").classList.add("hidden");
+    refreshLearnProgress();
+    alert("本批学习完成！");
+    return;
+  }
+  showLearnCard();
+}
+$("learn-exit-btn").onclick = () => {
+  $("learn-session").classList.add("hidden");
+  refreshLearnProgress();
+};
+
+// ---------- 八股：测验模式 ----------
 let quizQueue = [], quizIdx = 0, quizLastAnswer = "";
 
 async function loadTags() {
@@ -289,14 +431,16 @@ async function loadTags() {
 $("quiz-start-btn").onclick = async () => {
   const tags = $("quiz-tag-select").value;
   const n = parseInt($("quiz-num").value, 10);
-  const d = await api(`/api/cards/next?tags=${encodeURIComponent(tags)}&n=${n}`);
+  const onlyLearned = $("quiz-only-learned").checked ? 1 : 0;
+  const d = await api(`/api/cards/next?tags=${encodeURIComponent(tags)}&n=${n}&only_learned=${onlyLearned}`);
   if (!d.cards.length) {
     return alert("题库为空：请先用 `prepdojo ingest <知识目录>` 接入你的八股资料");
   }
   quizQueue = d.cards; quizIdx = 0;
-  $("quiz-start").classList.add("hidden");
-  $("quiz-session").classList.remove("hidden");
-  $("quiz-feedback").classList.add("hidden");
+  $("quiz-test-view").querySelector("#quiz-session").classList.remove("hidden");
+  if (d.fallback) {
+    alert("已学的卡暂时抽不出题，本次从全部卡里抽（学都没学的题分数低是正常的）。");
+  }
   showQuizCard();
 };
 
@@ -384,7 +528,6 @@ function quizNext() {
   quizIdx += 1;
   if (quizIdx >= quizQueue.length) {
     $("quiz-session").classList.add("hidden");
-    $("quiz-start").classList.remove("hidden");
     alert("本轮练习完成！");
     return;
   }
@@ -392,17 +535,15 @@ function quizNext() {
 }
 $("quiz-next-btn").onclick = quizNext;
 $("quiz-skip-btn").onclick = quizNext;
-$("quiz-exit-btn").onclick = () => {
-  $("quiz-session").classList.add("hidden");
-  $("quiz-start").classList.remove("hidden");
-};
+$("quiz-exit-btn").onclick = () => { $("quiz-session").classList.add("hidden"); };
 
 // ---------- 概览 ----------
 async function loadStats() {
   const s = await api("/api/stats");
+  const ac = problems.filter(p => p.ever_ac).length;
   const items = [
-    ["八股题卡", s.cards], ["知识来源文件", s.sources], ["代码题", s.problems],
-    ["提交次数", s.submissions], ["AC 次数", s.ac],
+    ["八股题卡", s.cards], ["已学习", s.learned_cards ?? "—"], ["代码题", s.problems],
+    ["代码已攻克", `${ac}/${problems.length}`], ["提交次数", s.submissions], ["AC 次数", s.ac],
     ["八股练习", s.quiz_attempts], ["八股均分", s.quiz_avg_score ?? "—"],
   ];
   $("stats-grid").innerHTML = items.map(([k, v]) =>
@@ -415,3 +556,6 @@ setEditorCode(TEMPLATES.python, "python");
 refreshBadge();
 loadProblems();
 loadTags();
+loadLearnTags();
+setQuizMode("learn");
+refreshLearnProgress();

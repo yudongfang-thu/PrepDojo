@@ -96,9 +96,13 @@ a { color:var(--accent); }
   <!-- 代码题 -->
   <section id="page-coding">
     <div id="problem-list-view">
-      <h2 class="sec">代码题（本地沙箱判题 + AI 点评）</h2>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 class="sec" style="margin:0">代码题（本地沙箱判题 + AI 点评）</h2>
+        <button class="btn" id="wrong-drill-btn">❌ 错题重练</button>
+        <span class="muted" id="problem-stat-brief" style="font-size:12.5px"></span>
+      </div>
       <table id="problem-table"><thead>
-        <tr><th>编号</th><th>题目</th><th>难度</th><th>标签</th><th>用例数</th></tr>
+        <tr><th>状态</th><th>编号</th><th>题目</th><th>难度</th><th>标签</th><th>用例数</th></tr>
       </thead><tbody></tbody></table>
       <p class="muted" style="margin-top:14px">判题对错一律以测试用例为准；AI 只做点评。
         题面与用例均为本仓库自写。接入自己的 LeetCode 题记录见 README（BYO 模式）。</p>
@@ -140,8 +144,52 @@ a { color:var(--accent); }
 
   <!-- 八股 -->
   <section id="page-quiz" class="hidden">
-    <div id="quiz-start">
-      <h2 class="sec">八股陪练（抽题 → 作答 → AI 打分 → 追问）</h2>
+    <div class="toolbar" style="margin-bottom:14px">
+      <div style="display:flex;gap:4px">
+        <button class="btn primary" id="quiz-mode-learn">📖 学习</button>
+        <button class="btn" id="quiz-mode-test">✍️ 测验</button>
+      </div>
+      <div id="learn-progress" class="muted" style="margin-left:auto"></div>
+    </div>
+
+    <!-- 学习模式 -->
+    <div id="quiz-learn-view">
+      <div class="toolbar">
+        <select id="learn-tag-select"><option value="">全部标签</option></select>
+        <select id="learn-num"><option value="10">10 卡</option><option value="20">20 卡</option><option value="50">50 卡</option></select>
+        <button class="btn primary" id="learn-start-btn">开始学习</button>
+      </div>
+      <p class="muted">学习流程：先自己回想 → 显示答案要点 → 不懂就看 AI 讲解 → 掌握了点「已学会」。
+        测验默认只从已学的卡抽题。</p>
+      <div id="learn-session" class="hidden">
+        <div class="muted" id="learn-progress-cnt"></div>
+        <div class="card" style="margin-top:12px">
+          <div class="quiz-q" id="learn-question"></div>
+          <div id="learn-answer" class="hidden">
+            <p class="muted" style="margin:4px 0">答案要点：</p>
+            <div id="learn-points"></div>
+            <div id="learn-explain-area"></div>
+            <div class="toolbar" style="margin-top:10px">
+              <button class="btn" id="learn-explain-btn">🧠 AI 讲解</button>
+            </div>
+          </div>
+          <div class="toolbar">
+            <button class="btn primary" id="learn-show-btn">显示答案（先自己想 10 秒）</button>
+            <button class="btn primary hidden" id="learn-done-btn">✅ 已学会</button>
+            <button class="btn hidden" id="learn-later-btn">还没懂，下一卡</button>
+          </div>
+        </div>
+        <div class="toolbar" style="margin-top:14px">
+          <button class="btn" id="learn-prev-btn">← 上一卡</button>
+          <button class="btn primary" id="learn-next-btn">下一卡 →</button>
+          <button class="btn" id="learn-exit-btn">结束学习</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 测验模式 -->
+    <div id="quiz-test-view" class="hidden">
+      <h2 class="sec">测验（抽题 → 作答 → AI 打分 → 追问）</h2>
       <div class="toolbar">
         <select id="quiz-tag-select"><option value="">全部标签</option></select>
         <select id="quiz-style">
@@ -150,25 +198,26 @@ a { color:var(--accent); }
           <option value="pressure">压力面面试官</option>
         </select>
         <select id="quiz-num"><option value="5">5 题</option><option value="10">10 题</option><option value="20">20 题</option></select>
+        <label style="font-size:13px;color:var(--muted);display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="quiz-only-learned" checked>仅已学
+        </label>
         <button class="btn primary" id="quiz-start-btn">开始抽题</button>
       </div>
-      <p class="muted">题卡来自你自己接入的知识目录（本地 data/prepdojo.db），
-        内容不上传仓库；打分时会把你的作答发送到所配置的 LLM 服务商。</p>
-    </div>
-    <div id="quiz-session" class="hidden">
-      <div class="muted" id="quiz-progress"></div>
-      <div class="card" style="margin-top:12px">
-        <div class="quiz-q" id="quiz-question"></div>
-        <textarea class="answer" id="quiz-answer" placeholder="用自己的话作答，答完提交评分…"></textarea>
-        <div class="toolbar">
-          <button class="btn primary" id="quiz-grade-btn">提交评分</button>
-          <button class="btn" id="quiz-skip-btn">跳过此题</button>
+      <div id="quiz-session" class="hidden">
+        <div class="muted" id="quiz-progress"></div>
+        <div class="card" style="margin-top:12px">
+          <div class="quiz-q" id="quiz-question"></div>
+          <textarea class="answer" id="quiz-answer" placeholder="用自己的话作答，答完提交评分…"></textarea>
+          <div class="toolbar">
+            <button class="btn primary" id="quiz-grade-btn">提交评分</button>
+            <button class="btn" id="quiz-skip-btn">跳过此题</button>
+          </div>
         </div>
-      </div>
-      <div id="quiz-feedback" class="hidden"></div>
-      <div class="toolbar" style="margin-top:14px">
-        <button class="btn primary hidden" id="quiz-next-btn">下一题</button>
-        <button class="btn" id="quiz-exit-btn">结束练习</button>
+        <div id="quiz-feedback" class="hidden"></div>
+        <div class="toolbar" style="margin-top:14px">
+          <button class="btn primary hidden" id="quiz-next-btn">下一题</button>
+          <button class="btn" id="quiz-exit-btn">结束练习</button>
+        </div>
       </div>
     </div>
   </section>

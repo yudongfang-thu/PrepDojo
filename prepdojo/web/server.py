@@ -80,6 +80,13 @@ def create_app(cfg: Config, db: DB) -> FastAPI:
     def problems():
         return {"problems": db.list_problems()}
 
+    @app.get("/api/problems/wrong")
+    def wrong_problems():
+        """错题本：提交过但从未 AC 的题（AC 即自动移出）。"""
+        ids = db.wrong_problem_ids()
+        allp = {p["id"]: p for p in db.list_problems()}
+        return {"wrong": [allp[i] for i in ids if i in allp]}
+
     @app.get("/api/problems/{pid}")
     def problem_detail(pid: str):
         p = db.get_problem(pid)
@@ -147,15 +154,58 @@ def create_app(cfg: Config, db: DB) -> FastAPI:
     # ---------- 八股 ----------
 
     @app.get("/api/cards/next")
-    def cards_next(tags: str = "", n: int = 5, difficulty: int = -1):
+    def cards_next(tags: str = "", n: int = 5, difficulty: int = -1,
+                   only_learned: bool = True):
         tag_list = [t.strip() for t in tags.split(",") if t.strip()] or None
-        cards = db.pick_cards(tags=tag_list, n=n,
+        cards = db.pick_cards(tags=tag_list, n=n, only_learned=only_learned,
                               difficulty=difficulty if difficulty > 0 else None)
-        # 打分后才下发 answer_points 之外的信息；这里先不带答案，防偷看
-        return {"cards": [
-            {k: c[k] for k in ("id", "question", "topic_tags", "difficulty", "source_ref")}
-            for c in cards
-        ]}
+        if not cards and only_learned:
+            # 已学池为空：回退到全部卡（提示前端），避免无题可抽
+            cards = db.pick_cards(tags=tag_list, n=n,
+                                  difficulty=difficulty if difficulty > 0 else None)
+            return {"cards": [c0(c) for c in cards], "fallback": True}
+        return {"cards": [c0(c) for c in cards], "fallback": False}
+
+    def c0(c):  # 抽题不下发答案，防偷看
+        return {k: c[k] for k in ("id", "question", "topic_tags", "difficulty",
+                                  "source_ref", "learned")}
+
+    @app.get("/api/cards/learn")
+    def cards_learn(tags: str = "", n: int = 10, include_learned: bool = False):
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] or None
+        cards = db.pick_learn_cards(tags=tag_list, n=n,
+                                    only_unlearned=not include_learned)
+        return {"cards": cards}  # 学习模式直接给全部字段（含要点与讲解缓存）
+
+    @app.post("/api/cards/{cid}/learn")
+    def card_mark_learned(cid: str, body: dict):
+        learned = bool(body.get("learned", True))
+        if not db.mark_learned(cid, learned):
+            raise HTTPException(404, "题卡不存在")
+        return {"ok": True, "learned": learned}
+
+    @app.get("/api/cards/progress")
+    def cards_progress():
+        return db.learn_progress()
+
+    @app.get("/api/cards/{cid}/explain")
+    def card_explain(cid: str):
+        card = db.get_card(cid)
+        if not card:
+            raise HTTPException(404, "题卡不存在")
+        if card.get("explanation"):  # 缓存直接返回
+            return {"explanation": json.loads(card["explanation"]), "cached": True}
+        llm = _llm(cfg)
+        if llm is None:
+            raise HTTPException(503, _LLM_HINT)
+        from ..quiz import explain_card
+
+        try:
+            result = explain_card(llm, card)
+        except Exception as e:
+            raise HTTPException(502, f"讲解生成失败: {e}")
+        db.set_explanation(cid, json.dumps(result, ensure_ascii=False))
+        return {"explanation": result, "cached": False}
 
     @app.get("/api/cards/{cid}")
     def card_detail(cid: str):

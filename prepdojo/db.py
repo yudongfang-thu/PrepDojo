@@ -32,7 +32,10 @@ CREATE TABLE IF NOT EXISTS cards (
   difficulty INTEGER NOT NULL DEFAULT 2,
   source_id INTEGER REFERENCES sources(id),
   source_ref TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  learned INTEGER NOT NULL DEFAULT 0,
+  learned_at TEXT,
+  explanation TEXT
 );
 
 CREATE TABLE IF NOT EXISTS quiz_attempts (
@@ -101,6 +104,19 @@ class DB:
         self.conn.row_factory = sqlite3.Row
         with self._lock:
             self.conn.executescript(SCHEMA)
+            self._migrate()
+
+    def _migrate(self) -> None:
+        """轻量迁移：为旧库补新列（ADD COLUMN 带默认值是原子操作）。"""
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(cards)")}
+        for col, ddl in (
+            ("learned", "ALTER TABLE cards ADD COLUMN learned INTEGER NOT NULL DEFAULT 0"),
+            ("learned_at", "ALTER TABLE cards ADD COLUMN learned_at TEXT"),
+            ("explanation", "ALTER TABLE cards ADD COLUMN explanation TEXT"),
+        ):
+            if col not in cols:
+                self.conn.execute(ddl)
+        self.conn.commit()
 
     def close(self) -> None:
         self.conn.close()
@@ -187,19 +203,25 @@ class DB:
             "difficulty": row["difficulty"],
             "source_ref": row["source_ref"],
             "created_at": row["created_at"],
+            "learned": bool(row["learned"]),
+            "learned_at": row["learned_at"],
+            "explanation": row["explanation"],
         }
 
     def pick_cards(
         self, tags: Optional[list[str]] = None, n: int = 10,
         exclude_seen_days: int = 3, difficulty: Optional[int] = None,
+        only_learned: bool = False,
     ) -> list[dict[str, Any]]:
-        """抽题：默认排除最近 N 天练过的卡；无 LLM 依赖。"""
+        """测验抽题：默认排除最近 N 天练过的卡；only_learned 时仅从已学卡抽。"""
         q = (
             "SELECT c.* FROM cards c WHERE c.id NOT IN ("
             "  SELECT card_id FROM quiz_attempts WHERE asked_at >= datetime('now', ?)"
             ")"
         )
         args: list[Any] = [f"-{exclude_seen_days} days"]
+        if only_learned:
+            q += " AND c.learned=1"
         if tags:
             conds = " OR ".join("c.topic_tags LIKE ?" for _ in tags)
             q += f" AND ({conds})"
@@ -211,6 +233,57 @@ class DB:
         args.append(n)
         rows = self.execute(q, args).fetchall()
         return [self._card_row(r) for r in rows]
+
+    # ---------- 学习模式 ----------
+
+    def pick_learn_cards(
+        self, tags: Optional[list[str]] = None, n: int = 10,
+        only_unlearned: bool = True,
+    ) -> list[dict[str, Any]]:
+        """学习模式抽卡：默认只抽未学卡。"""
+        q = "SELECT c.* FROM cards c"
+        conds: list[str] = []
+        args: list[Any] = []
+        if only_unlearned:
+            conds.append("c.learned=0")
+        if tags:
+            conds.append("(" + " OR ".join("c.topic_tags LIKE ?" for _ in tags) + ")")
+            args += [f'%"{t}"%' for t in tags]
+        if conds:
+            q += " WHERE " + " AND ".join(conds)
+        q += " ORDER BY RANDOM() LIMIT ?"
+        args.append(n)
+        rows = self.execute(q, args).fetchall()
+        return [self._card_row(r) for r in rows]
+
+    def mark_learned(self, card_id: str, learned: bool) -> bool:
+        cur = self.execute(
+            "UPDATE cards SET learned=?, learned_at=? WHERE id=?",
+            (1 if learned else 0, _now() if learned else None, card_id),
+        )
+        return cur.rowcount > 0
+
+    def set_explanation(self, card_id: str, explanation: str) -> None:
+        self.execute("UPDATE cards SET explanation=? WHERE id=?",
+                     (explanation, card_id))
+
+    def learn_progress(self) -> dict[str, Any]:
+        total = int(self.execute("SELECT COUNT(*) FROM cards").fetchone()[0])
+        learned = int(self.execute("SELECT COUNT(*) FROM cards WHERE learned=1").fetchone()[0])
+        # 按标签的学习进度
+        rows = self.execute("SELECT topic_tags, learned FROM cards").fetchall()
+        tag_stat: dict[str, list[int]] = {}
+        for r in rows:
+            for t in json.loads(r["topic_tags"]):
+                s = tag_stat.setdefault(t, [0, 0])
+                s[1] += 1
+                if r["learned"]:
+                    s[0] += 1
+        tags = sorted(tag_stat.items(), key=lambda kv: -(kv[1][1] - kv[1][0]))  # 未学多的在前
+        return {
+            "total": total, "learned": learned,
+            "tags": [{"tag": t, "learned": v[0], "total": v[1]} for t, v in tags],
+        }
 
     def all_tags(self) -> list[tuple[str, int]]:
         rows = self.execute("SELECT topic_tags FROM cards").fetchall()
@@ -261,13 +334,39 @@ class DB:
             "SELECT p.*, (SELECT COUNT(*) FROM test_cases t WHERE t.problem_id=p.id) AS n_cases "
             "FROM coding_problems p ORDER BY p.id"
         ).fetchall()
+        status = self.problem_status_map()
         return [
             {
                 "id": r["id"], "title": r["title"], "difficulty": r["difficulty"],
                 "tags": json.loads(r["tags"]), "n_cases": r["n_cases"],
+                **status.get(r["id"], {"ever_ac": False, "attempts": 0}),
             }
             for r in rows
         ]
+
+    def problem_status_map(self) -> dict[str, dict[str, Any]]:
+        """每题提交状态：ever_ac（是否 AC 过）/ attempts（总提交次数）。"""
+        rows = self.execute(
+            "SELECT problem_id,"
+            " MAX(CASE WHEN verdict='AC' THEN 1 ELSE 0 END) AS ever_ac,"
+            " COUNT(*) AS attempts,"
+            " (SELECT verdict FROM submissions s2 WHERE s2.problem_id=s1.problem_id"
+            "  ORDER BY id DESC LIMIT 1) AS last_verdict"
+            " FROM submissions s1 GROUP BY problem_id"
+        ).fetchall()
+        return {r["problem_id"]: {"ever_ac": bool(r["ever_ac"]),
+                                  "attempts": r["attempts"],
+                                  "last_verdict": r["last_verdict"]}
+                for r in rows}
+
+    def wrong_problem_ids(self) -> list[str]:
+        """错题本：提交过但从未 AC 的题。AC 即自动移出。"""
+        rows = self.execute(
+            "SELECT problem_id FROM submissions GROUP BY problem_id "
+            "HAVING MAX(CASE WHEN verdict='AC' THEN 1 ELSE 0 END)=0 "
+            "ORDER BY RANDOM()"
+        ).fetchall()
+        return [r["problem_id"] for r in rows]
 
     def get_problem(self, pid: str) -> Optional[dict[str, Any]]:
         r = self.execute("SELECT * FROM coding_problems WHERE id=?", (pid,)).fetchone()
@@ -329,6 +428,7 @@ class DB:
 
         return {
             "cards": one("SELECT COUNT(*) FROM cards"),
+            "learned_cards": one("SELECT COUNT(*) FROM cards WHERE learned=1"),
             "sources": one("SELECT COUNT(*) FROM sources"),
             "problems": one("SELECT COUNT(*) FROM coding_problems"),
             "submissions": one("SELECT COUNT(*) FROM submissions"),

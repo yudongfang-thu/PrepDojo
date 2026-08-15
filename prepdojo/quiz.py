@@ -48,6 +48,29 @@ def followup_system(style: str = "standard") -> str:
         persona=INTERVIEWER_PERSONA.get(style, INTERVIEWER_PERSONA["standard"]))
 
 
+EXPLAIN_SYSTEM = """你是一位擅长把复杂概念讲简单的技术讲师，面向准备秋招的学生讲解八股知识点。
+基于给定的问题与参考要点，输出 JSON：
+{
+ "core": "一句话说清这个知识点的核心（不超过 40 字）",
+ "expanded": "展开讲解，300-500 字：是什么、为什么这样设计、常见误区；用中文，条理清晰",
+ "analogy": "一个贴切的生活/工程类比，帮助记忆",
+ "mnemonic": "一句记忆锚点：把要点串成朗朗上口的一句话或口诀",
+ "related": ["1-3 个相关联的知识点名称，便于联想复习"]
+}
+只依据给定材料展开，不编造；材料信息不足的部分从略。"""
+
+
+def explain_card(llm: LLMClient, card: dict[str, Any]) -> dict[str, Any]:
+    points = "\n".join(f"- {p}" for p in card["answer_points"])
+    user = f"""【问题】{card['question']}
+
+【参考要点】
+{points}
+
+请按 system 要求输出 JSON 讲解。"""
+    return llm.chat_json(EXPLAIN_SYSTEM, user, max_tokens=2000)
+
+
 def grade_answer(llm: LLMClient, card: dict[str, Any], answer: str,
                  style: str = "standard") -> dict[str, Any]:
     points = "\n".join(f"- {p}" for p in card["answer_points"])
