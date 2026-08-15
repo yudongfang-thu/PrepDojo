@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -65,6 +66,145 @@ def create_app(cfg: Config, db: DB) -> FastAPI:
     def health():
         return {"ok": True, "llm_ready": cfg.llm_ready,
                 "model": cfg.model if cfg.llm_ready else None}
+
+    # ---------- 设置：LLM 配置（前端可改，热更新） ----------
+
+    @app.get("/api/llm/config")
+    def llm_config():
+        masked = ""
+        if cfg.api_key:
+            k = cfg.api_key
+            masked = k[:5] + "***" + k[-4:] if len(k) > 12 else "***"
+        return {"base_url": cfg.base_url, "model": cfg.model,
+                "api_key_masked": masked, "configured": cfg.llm_ready}
+
+    @app.post("/api/llm/config")
+    def llm_config_save(body: dict):
+        import yaml as _yaml
+
+        from ..config import CONFIG_PATH, ensure_dirs
+
+        ensure_dirs()
+        base_url = (body.get("base_url") or cfg.base_url).strip()
+        model = (body.get("model") or cfg.model).strip()
+        api_key = body.get("api_key", "").strip()  # 空则保留原 key
+        new_key = api_key or cfg.api_key
+        data = {"llm": {"api_key": new_key, "base_url": base_url, "model": model,
+                        "temperature": cfg.temperature, "timeout": cfg.timeout}}
+        CONFIG_PATH.write_text(_yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+                               encoding="utf-8")
+        # 热更新内存配置
+        cfg.api_key, cfg.base_url, cfg.model = new_key, base_url, model
+        return {"ok": True, "llm_ready": cfg.llm_ready, "model": cfg.model}
+
+    @app.get("/api/llm/models")
+    def llm_models():
+        """扫描 base_url 下可用模型列表。"""
+        if not cfg.api_key:
+            raise HTTPException(400, "请先填写 API key 并保存")
+        try:
+            resp = httpx.get(f"{cfg.base_url.rstrip('/')}/models",
+                             headers={"Authorization": f"Bearer {cfg.api_key}"},
+                             timeout=30)
+            if resp.status_code == 401:
+                raise HTTPException(401, "API key 无效")
+            resp.raise_for_status()
+            ids = sorted(m.get("id", "") for m in resp.json().get("data", []))
+            return {"models": [i for i in ids if i], "current": cfg.model}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(502, f"获取模型列表失败: {e}")
+
+    # ---------- 设置：知识库管理 ----------
+
+    @app.get("/api/fs/browse")
+    def fs_browse(path: str = "~"):
+        """本机目录浏览（localhost 单用户工具）。返回子目录与可导入文件统计。"""
+        from ..extract import SUPPORTED_EXT
+
+        p = Path(path).expanduser()
+        if not p.exists():
+            raise HTTPException(404, f"路径不存在: {p}")
+        if not p.is_dir():
+            raise HTTPException(400, "请提供目录路径")
+        dirs, importable = [], []
+        try:
+            for ch in sorted(p.iterdir()):
+                if ch.name.startswith("."):
+                    continue
+                if ch.is_dir():
+                    dirs.append({"name": ch.name + "/", "path": str(ch)})
+                elif ch.is_file() and ch.suffix.lower() in SUPPORTED_EXT:
+                    importable.append({"name": ch.name, "path": str(ch)})
+        except PermissionError:
+            raise HTTPException(403, "无权限读取该目录")
+        return {"current": str(p), "parent": str(p.parent) if str(p) != str(p.anchor) else None,
+                "dirs": dirs, "importable_files": importable,
+                "importable_count": len(importable)}
+
+    @app.get("/api/sources")
+    def list_sources():
+        rows = db.execute(
+            "SELECT id, path, title, n_cards, ingested_at FROM sources ORDER BY id DESC"
+        ).fetchall()
+        return {"sources": [
+            {"id": r["id"], "title": r["title"] or Path(r["path"]).name,
+             "path": r["path"], "n_cards": r["n_cards"],
+             "ingested_at": r["ingested_at"]} for r in rows]}
+
+    @app.delete("/api/sources/{sid}")
+    def delete_source(sid: int):
+        db.execute("DELETE FROM cards WHERE source_id=?", (sid,))
+        db.execute("DELETE FROM sources WHERE id=?", (sid,))
+        return {"ok": True}
+
+    @app.post("/api/ingest/start")
+    async def ingest_start(body: dict):
+        """SSE：流式导入知识目录（AI thinking / 输出 / 进度全事件）。"""
+        path = (body.get("path") or "").strip()
+        if not path:
+            raise HTTPException(400, "缺少 path")
+        llm = _llm(cfg)
+        if llm is None:
+            raise HTTPException(503, _LLM_HINT)
+        from ..ingest import ingest_dir
+
+        import asyncio
+        import queue as _q
+
+        loop = asyncio.get_event_loop()
+
+        async def gen():
+            q: _q.Queue = _q.Queue()
+
+            def on_event(kind: str, data: dict) -> None:
+                q.put((kind, data))
+
+            def run():
+                try:
+                    stats = ingest_dir(Path(path), db, cfg, llm,
+                                       on_event=on_event, sleep_s=0.05)
+                    q.put(("all_done", stats))
+                except Exception as e:
+                    q.put(("error", {"message": str(e)}))
+                finally:
+                    q.put(("_end", {}))
+
+            task = loop.run_in_executor(None, run)
+            while True:
+                kind, data = await loop.run_in_executor(None, q.get)
+                if kind == "_end":
+                    break
+                yield "data: " + json.dumps({"event": kind, **data},
+                                            ensure_ascii=False) + "\n\n"
+            await task
+
+        from fastapi.responses import StreamingResponse
+
+        return StreamingResponse(gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache",
+                                          "X-Accel-Buffering": "no"})
 
     @app.get("/api/stats")
     def stats():
@@ -201,11 +341,12 @@ def create_app(cfg: Config, db: DB) -> FastAPI:
         from ..quiz import explain_card
 
         try:
-            result = explain_card(llm, card)
+            out = explain_card(llm, card, with_reasoning=True)
+            result = out["json"]
         except Exception as e:
             raise HTTPException(502, f"讲解生成失败: {e}")
         db.set_explanation(cid, json.dumps(result, ensure_ascii=False))
-        return {"explanation": result, "cached": False}
+        return {"explanation": result, "cached": False, "reasoning": out["reasoning"]}
 
     @app.get("/api/cards/{cid}")
     def card_detail(cid: str):
@@ -225,12 +366,14 @@ def create_app(cfg: Config, db: DB) -> FastAPI:
         from ..quiz import grade_answer
 
         try:
-            result = grade_answer(llm, card, req.answer, style=req.style)
+            out = grade_answer(llm, card, req.answer, style=req.style, with_reasoning=True)
+            result = out["json"]
         except Exception as e:
             raise HTTPException(502, f"打分失败: {e}")
         db.record_attempt(card["id"], card["question"], req.answer,
                           result.get("score", 0), result, mode="web")
         result["reference"] = card["answer_points"]  # 打完分再给参考要点
+        result["reasoning"] = out["reasoning"]
         return result
 
     @app.post("/api/quiz/followup")
@@ -244,12 +387,14 @@ def create_app(cfg: Config, db: DB) -> FastAPI:
         from ..quiz import grade_followup
 
         try:
-            result = grade_followup(llm, card, req.question, req.answer,
-                                    req.context_answer, style=req.style)
+            out = grade_followup(llm, card, req.question, req.answer,
+                                 req.context_answer, style=req.style, with_reasoning=True)
+            result = out["json"]
         except Exception as e:
             raise HTTPException(502, f"追问评分失败: {e}")
         db.record_attempt(card["id"], req.question, req.answer,
                           result.get("score", 0), result, mode="follow_up")
+        result["reasoning"] = out["reasoning"]
         return result
 
     # ---------- AI 判题（工具增强的结构化判定报告，SSE） ----------

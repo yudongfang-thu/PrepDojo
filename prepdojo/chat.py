@@ -190,40 +190,42 @@ def chat_step(
     """跑一轮对话：LLM ↔ 工具循环，直到产出自然语言回复。
 
     history: [{"role": "system"|"user"|"assistant"|"tool", "content": ...}]
-    on_event: 可选回调（"tool_start"/"tool_done"/"reply_delta"），用于流式 UI。
+    on_event 事件：
+      tool_start / tool_done / reply（完整回复）
+      thinking_delta / content_delta（AI 思考与输出增量流）
     """
-    import httpx
-
     messages = [dict(m) for m in history]
     trace: list[ToolTrace] = []
-    headers = {"Authorization": f"Bearer {llm.api_key}"}
+
+    def emit(kind: str, **data) -> None:
+        if on_event:
+            on_event(kind, data)
 
     for round_i in range(max_rounds):
-        # 最后一轮若无工具调用则一次性返回；工具阶段非流式
-        resp = httpx.post(
-            f"{llm.base_url}/chat/completions",
-            headers=headers,
-            json={
-                "model": llm.model,
-                "messages": messages,
-                "temperature": llm.temperature,
-                "tools": TOOLS_SPEC,
-                "max_tokens": 3000,
-            },
-            timeout=llm.timeout,
-        )
-        resp.raise_for_status()
-        msg = resp.json()["choices"][0]["message"]
+        content, reasoning = "", ""
+        calls: list[dict] = []
+        try:
+            for ev in llm.stream_chat(
+                "", "", max_tokens=3000, tools=TOOLS_SPEC,
+                _messages_override=messages,
+            ):
+                if ev["type"] == "done":
+                    content, reasoning = ev["content"], ev["reasoning"]
+                    calls = ev.get("tool_calls") or []
+                elif ev["type"] == "reasoning_delta":
+                    emit("thinking_delta", text=ev["text"])
+                elif ev["type"] == "content_delta":
+                    emit("content_delta", text=ev["text"])
+        except Exception as e:
+            raise RuntimeError(f"LLM 调用失败: {e}") from e
 
-        calls = msg.get("tool_calls") or []
         if not calls:
-            reply = msg.get("content") or ""
-            if on_event:
-                on_event("reply", {"text": reply})
+            reply = content or ""
+            emit("reply", text=reply)
             return ChatResult(reply=reply, tool_trace=trace)
 
         messages.append({"role": "assistant",
-                         "content": msg.get("content") or "",
+                         "content": content or "",
                          "tool_calls": calls})
         for call in calls:
             fn = call["function"]
@@ -231,29 +233,22 @@ def chat_step(
                 args = json.loads(fn["arguments"] or "{}")
             except json.JSONDecodeError:
                 args = {}
-            if on_event:
-                on_event("tool_start", {"name": fn["name"], "args": args})
+            emit("tool_start", name=fn["name"], args=args)
             result, summary = tools.dispatch(fn["name"], args)
             trace.append(ToolTrace(fn["name"], args, summary))
-            if on_event:
-                on_event("tool_done", {"name": fn["name"], "summary": summary})
+            emit("tool_done", name=fn["name"], summary=summary)
             messages.append({"role": "tool", "tool_call_id": call["id"],
                              "content": result})
 
-    # 达到轮数上限：强制收尾
     messages.append({"role": "user", "content": "（工具调用轮数已达上限，请基于已有信息直接给出结论。）"})
-    resp = httpx.post(
-        f"{llm.base_url}/chat/completions",
-        headers=headers,
-        json={"model": llm.model, "messages": messages,
-              "temperature": llm.temperature, "max_tokens": 2500},
-        timeout=llm.timeout,
-    )
-    resp.raise_for_status()
-    reply = resp.json()["choices"][0]["message"]["content"]
-    if on_event:
-        on_event("reply", {"text": reply})
-    return ChatResult(reply=reply, tool_trace=trace, stopped_reason="max_rounds")
+    content, _ = "", ""
+    for ev in llm.stream_chat("", "", max_tokens=2500, _messages_override=messages):
+        if ev["type"] == "done":
+            content = ev["content"]
+        elif ev["type"] == "content_delta":
+            emit("content_delta", text=ev["text"])
+    emit("reply", text=content)
+    return ChatResult(reply=content, tool_trace=trace, stopped_reason="max_rounds")
 
 
 def build_problem_context(problem: dict, code: str, language: str,

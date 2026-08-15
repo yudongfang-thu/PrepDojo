@@ -48,7 +48,7 @@ const TEMPLATES = {
 };
 
 // ---------- 导航 ----------
-const pages = ["home", "coding", "quiz", "stats"];
+const pages = ["home", "coding", "quiz", "kb", "settings", "stats"];
 function showPage(name) {
   pages.forEach(p => {
     const el = $("page-" + p);
@@ -57,6 +57,8 @@ function showPage(name) {
   });
   if (name === "stats") loadStats();
   if (name === "home") loadHeroStats();
+  if (name === "kb") loadSources();
+  if (name === "settings") loadSettings();
 }
 pages.forEach(p => $("nav-" + p).onclick = () => showPage(p));
 
@@ -245,7 +247,14 @@ $("ai-judge-btn").onclick = async () => {
         } else if (ev.event === "tool_done") {
           live.insertAdjacentHTML("beforeend",
             `<div class="coach-msg tool">✅ ${esc(ev.summary)}</div>`);
+        } else if (ev.event === "thinking_delta") {
+          if (!live._think) live._think = makeThinkingBox(live);
+          appendThinking(live._think, ev.text);
+        } else if (ev.event === "content_delta") {
+          live.insertAdjacentHTML("beforeend",
+            `<div class="coach-msg tool">${esc(ev.text)}</div>`);
         } else if (ev.event === "report") {
+          if (live._think) live._think.open = false;
           renderAiJudgeReport(live, ev.report);
         } else if (ev.event === "report_raw") {
           live.insertAdjacentHTML("beforeend",
@@ -284,7 +293,7 @@ function renderAiJudgeReport(container, r) {
     </div>`);
 }
 
-// ---------- AI 讲题教练（SSE 流式 + 沙箱工具轨迹） ----------
+// ---------- AI 讲题教练（SSE 流式 + 沙箱工具轨迹 + thinking 流） ----------
 let coachHistory = [];
 
 function coachRender(role, text, cls) {
@@ -294,6 +303,20 @@ function coachRender(role, text, cls) {
   $("coach-messages").appendChild(div);
   $("coach-messages").scrollTop = 1e9;
   return div;
+}
+
+function makeThinkingBox(parent) {
+  const d = document.createElement("details");
+  d.className = "thinking";
+  d.open = true; // 导入/判题进行中默认展开，看得到 AI 在干活
+  d.innerHTML = '<summary>🧠 AI thinking…</summary><div class="th-content"></div>';
+  parent.appendChild(d);
+  return d;
+}
+function appendThinking(box, text) {
+  const tc = box.querySelector(".th-content");
+  tc.textContent += text;
+  tc.scrollTop = tc.scrollHeight;
 }
 
 $("ask-coach-btn").onclick = () => {
@@ -348,9 +371,19 @@ async function coachSend() {
           reply = "";
         } else if (ev.event === "tool_done") {
           coachRender("tool", `✅ ${ev.summary}`, "tool");
+        } else if (ev.event === "thinking_delta") {
+          if (!assistantDiv._think) {
+            const tb = makeThinkingBox(assistantDiv.parentNode || $("coach-messages"));
+            assistantDiv._think = tb;
+          }
+          appendThinking(assistantDiv._think, ev.text);
+        } else if (ev.event === "content_delta") {
+          reply += ev.text;
+          assistantDiv.textContent = reply;
         } else if (ev.event === "reply") {
           reply = ev.text;
           assistantDiv.textContent = reply;
+          if (assistantDiv._think) assistantDiv._think.open = false;
         } else if (ev.event === "error") {
           assistantDiv.textContent = "出错：" + ev.message;
         }
@@ -447,6 +480,7 @@ $("learn-explain-btn").onclick = async () => {
     const r = await api(`/api/cards/${c.id}/explain`);
     const e = r.explanation;
     $("learn-explain-area").innerHTML = `
+      ${r.reasoning ? `<details class="thinking"><summary>🧠 讲解员的思考过程</summary><div class="th-content">${esc(r.reasoning)}</div></details>` : ""}
       <div class="card" style="margin-top:12px">
         <p><b>核心：</b>${esc(e.core)}</p>
         <p style="white-space:pre-wrap">${esc(e.expanded)}</p>
@@ -562,6 +596,7 @@ function renderQuizFeedback(r, c) {
   const fb = $("quiz-feedback");
   fb.classList.remove("hidden");
   let html = `
+    ${r.reasoning ? `<details class="thinking"><summary>🧠 面试官的思考过程</summary><div class="th-content">${esc(r.reasoning)}</div></details>` : ""}
     <div class="card" style="margin-top:14px">
       <div class="score-big">${r.score}<span class="muted" style="font-size:16px"> / 10</span></div>
       <p>${esc(r.overall || "")}</p>
@@ -619,6 +654,174 @@ $("quiz-next-btn").onclick = quizNext;
 $("quiz-skip-btn").onclick = quizNext;
 $("quiz-exit-btn").onclick = () => { $("quiz-session").classList.add("hidden"); };
 
+// ---------- 知识库管理 ----------
+let kbThinkingText = "";
+
+async function loadSources() {
+  const d = await api("/api/sources");
+  const tb = $("kb-sources-table").querySelector("tbody");
+  tb.innerHTML = d.sources.map(s => `
+    <tr><td>${esc(s.title)}</td><td>${s.n_cards}</td>
+    <td class="muted">${esc((s.ingested_at || "").replace("T", " ").slice(0, 16))}</td>
+    <td><button class="btn" style="padding:3px 10px;font-size:12px" onclick="delSource(${s.id})">删除</button></td></tr>`
+  ).join("") || '<tr><td colspan="4" class="muted">还没有导入任何知识。在上方输入目录路径开始。</td></tr>';
+}
+
+async function delSource(id) {
+  if (!confirm("删除该来源及其全部题卡？（练习记录保留）")) return;
+  await api(`/api/sources/${id}`, { method: "DELETE" });
+  loadSources();
+}
+
+$("kb-browse-btn").onclick = async () => {
+  const path = $("kb-path").value.trim() || "~";
+  try {
+    const d = await api(`/api/fs/browse?path=${encodeURIComponent(path)}`);
+    $("kb-browse-area").innerHTML = `
+      <div class="card" style="margin-top:10px;background:var(--panel2)">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn" style="padding:4px 10px;font-size:12px" onclick="kbGo('${esc(d.parent || "")}')">↑ 上级</button>
+          <span class="muted" style="font-size:13px">${esc(d.current)}</span>
+          <span class="badge tag">${d.importable_count} 个可导入文件</span>
+        </div>
+        <div style="margin-top:8px;max-height:180px;overflow:auto">
+          ${d.dirs.slice(0, 60).map(x =>
+            `<div style="padding:2px 0"><a href="javascript:void(0)" onclick="kbGo('${esc(x.path)}')" style="font-size:13.5px">📁 ${esc(x.name)}</a></div>`).join("")}
+          ${d.importable_files.slice(0, 40).map(x =>
+            `<div class="muted" style="font-size:12.5px;padding:2px 0">📄 ${esc(x.name)}</div>`).join("")}
+        </div>
+      </div>`;
+  } catch (e) { alert("浏览失败：" + e.message); }
+};
+function kbGo(path) { if (path) { $("kb-path").value = path; $("kb-browse-btn").click(); } }
+
+function kbLog(line, cls = "") {
+  const log = $("kb-live");
+  const div = document.createElement("div");
+  div.className = cls;
+  div.textContent = line;
+  log.appendChild(div);
+  log.scrollTop = 1e9;
+}
+
+$("kb-import-btn").onclick = async () => {
+  const path = $("kb-path").value.trim();
+  if (!path) return alert("请填写目录路径");
+  $("kb-progress-card").classList.remove("hidden");
+  $("kb-live").innerHTML = "";
+  kbThinkingText = "";
+  const btn = $("kb-import-btn");
+  btn.disabled = true; btn.textContent = "导入中…";
+  let filesDone = 0, filesTotal = 0;
+  try {
+    const resp = await fetch("/api/ingest/start", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    if (!resp.ok) {
+      let msg = resp.statusText;
+      try { msg = (await resp.json()).detail || msg; } catch {}
+      throw new Error(msg);
+    }
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "", thinkDiv = null;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
+        if (!chunk.startsWith("data: ")) continue;
+        const ev = JSON.parse(chunk.slice(6));
+        const k = ev.event;
+        if (k === "file_start") {
+          kbLog(`📄 ${ev.file}（${ev.blocks} 个知识块）`, "file-line");
+          thinkDiv = null;
+        } else if (k === "file_skip") {
+          kbLog(`⏭ ${ev.file}（已导入过，跳过）`, "fail-line");
+        } else if (k === "file_failed") {
+          kbLog(`⚠️ ${ev.file}: ${ev.error}`, "fail-line");
+        } else if (k === "card_done") {
+          kbLog(`  ✅ 题卡：${ev.question}`);
+        } else if (k === "delta" && ev.delta_kind === "reasoning_delta") {
+          if (!thinkDiv) {
+            thinkDiv = document.createElement("details");
+            thinkDiv.className = "thinking";
+            thinkDiv.open = false;
+            thinkDiv.innerHTML = '<summary>🧠 AI thinking…</summary><div class="th-content"></div>';
+            $("kb-live").appendChild(thinkDiv);
+          }
+          const tc = thinkDiv.querySelector(".th-content");
+          tc.textContent += ev.text;
+          tc.scrollTop = tc.scrollHeight;
+        } else if (k === "all_done") {
+          filesTotal = ev.files_total; filesDone = ev.files_done + ev.files_skipped + ev.files_failed;
+          $("kb-progress-fill").style.width = "100%";
+          $("kb-progress-text").textContent =
+            `完成：${ev.files_done} 文件 / ${ev.cards_added} 张题卡` +
+            (ev.cards_failed ? `（${ev.cards_failed} 失败）` : "");
+          kbLog(`🎉 导入完成：${ev.cards_added} 张题卡`, "file-line");
+          loadSources();
+        } else if (k === "error") {
+          kbLog(`❌ ${ev.message}`, "fail-line");
+        }
+      }
+    }
+  } catch (e) {
+    kbLog("❌ " + e.message, "fail-line");
+  } finally {
+    btn.disabled = false; btn.textContent = "开始导入";
+  }
+};
+
+// ---------- 设置 ----------
+async function loadSettings() {
+  try {
+    const d = await api("/api/llm/config");
+    $("set-baseurl").value = d.base_url;
+    $("set-model").value = d.model;
+    $("set-key-masked").textContent = d.configured ? d.api_key_masked : "未配置";
+    $("set-status").textContent = d.configured ? "● 已配置" : "○ 未配置";
+  } catch {}
+}
+
+$("set-scan-btn").onclick = async () => {
+  const btn = $("set-scan-btn");
+  btn.disabled = true; btn.textContent = "扫描中…";
+  try {
+    // 先保存当前填写的 url/key 再扫描
+    await api("/api/llm/config", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base_url: $("set-baseurl").value.trim(),
+        model: $("set-model").value.trim(), api_key: $("set-apikey").value.trim() }),
+    });
+    const d = await api("/api/llm/models");
+    const sel = $("set-model-select");
+    sel.classList.remove("hidden");
+    sel.innerHTML = d.models.map(m =>
+      `<option value="${esc(m)}" ${m === d.current ? "selected" : ""}>${esc(m)}</option>`).join("");
+    sel.onchange = () => { $("set-model").value = sel.value; };
+    $("set-status").textContent = `● 扫到 ${d.models.length} 个模型`;
+    refreshBadge();
+  } catch (e) { alert("扫描失败：" + e.message); }
+  finally { btn.disabled = false; btn.textContent = "扫描可用模型"; }
+};
+
+$("set-save-btn").onclick = async () => {
+  try {
+    const d = await api("/api/llm/config", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base_url: $("set-baseurl").value.trim(),
+        model: $("set-model").value.trim(), api_key: $("set-apikey").value.trim() }),
+    });
+    $("set-status").textContent = d.llm_ready ? `● 已保存（${d.model}）` : "已保存，但 key 仍为空";
+    $("set-apikey").value = "";
+    loadSettings(); refreshBadge();
+  } catch (e) { alert("保存失败：" + e.message); }
+};
+
 // ---------- 概览 ----------
 async function loadStats() {
   const s = await api("/api/stats");
@@ -641,3 +844,7 @@ loadTags();
 loadLearnTags();
 setQuizMode("learn");
 refreshLearnProgress();
+
+// inline onclick 导出
+window.delSource = delSource;
+window.kbGo = kbGo;

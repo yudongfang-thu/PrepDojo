@@ -60,7 +60,8 @@ EXPLAIN_SYSTEM = """你是一位擅长把复杂概念讲简单的技术讲师，
 只依据给定材料展开，不编造；材料信息不足的部分从略。"""
 
 
-def explain_card(llm: LLMClient, card: dict[str, Any]) -> dict[str, Any]:
+def explain_card(llm: LLMClient, card: dict[str, Any],
+                 with_reasoning: bool = False):
     points = "\n".join(f"- {p}" for p in card["answer_points"])
     user = f"""【问题】{card['question']}
 
@@ -68,11 +69,14 @@ def explain_card(llm: LLMClient, card: dict[str, Any]) -> dict[str, Any]:
 {points}
 
 请按 system 要求输出 JSON 讲解。"""
-    return llm.chat_json(EXPLAIN_SYSTEM, user, max_tokens=2000)
+    out = llm.stream_json(EXPLAIN_SYSTEM, user, max_tokens=2000)
+    if with_reasoning:
+        return {"json": out["json"], "reasoning": out["reasoning"]}
+    return out["json"]
 
 
 def grade_answer(llm: LLMClient, card: dict[str, Any], answer: str,
-                 style: str = "standard") -> dict[str, Any]:
+                 style: str = "standard", with_reasoning: bool = False):
     points = "\n".join(f"- {p}" for p in card["answer_points"])
     user = f"""【题目】{card['question']}
 
@@ -83,7 +87,10 @@ def grade_answer(llm: LLMClient, card: dict[str, Any], answer: str,
 {answer[:4000]}
 
 请按 system 要求输出 JSON。"""
-    result = llm.chat_json(grade_system(style), user, max_tokens=2000)
+    out = llm.stream_json(grade_system(style), user, max_tokens=2000)
+    result = out["json"]
+    if with_reasoning:
+        return {"json": result, "reasoning": out["reasoning"]}
     try:
         result["score"] = round(float(result.get("score", 0)), 1)
     except (TypeError, ValueError):
@@ -94,7 +101,8 @@ def grade_answer(llm: LLMClient, card: dict[str, Any], answer: str,
 def grade_followup(
     llm: LLMClient, card: dict[str, Any], followup_q: str, answer: str,
     context_answer: Optional[str] = None, style: str = "standard",
-) -> dict[str, Any]:
+    with_reasoning: bool = False,
+):
     points = "\n".join(f"- {p}" for p in card["answer_points"])
     user = f"""【原题】{card['question']}
 
@@ -109,7 +117,10 @@ def grade_followup(
 {answer[:4000]}
 
 请按 system 要求输出 JSON。"""
-    result = llm.chat_json(followup_system(style), user, max_tokens=1200)
+    out = llm.stream_json(followup_system(style), user, max_tokens=1200)
+    result = out["json"]
+    if with_reasoning:
+        return {"json": result, "reasoning": out["reasoning"]}
     try:
         result["score"] = round(float(result.get("score", 0)), 1)
     except (TypeError, ValueError):

@@ -43,12 +43,15 @@ def file_sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def structure_block(llm: LLMClient, block: QABlock) -> dict:
+def structure_block(llm: LLMClient, block: QABlock,
+                    on_delta=None) -> dict:
     user = CARD_USER_TEMPLATE.format(
         source_name=block.source_name or "未命名材料",
         raw=block.raw,
     )
-    obj = llm.chat_json(CARD_SYSTEM_PROMPT, user, max_tokens=1500)
+    out = llm.stream_json(CARD_SYSTEM_PROMPT, user, max_tokens=1500,
+                          on_delta=on_delta)
+    obj = out["json"]
     question = (obj.get("question") or block.question or "").strip()
     points = [str(x).strip() for x in obj.get("answer_points", []) if str(x).strip()]
     follow_ups = [str(x).strip() for x in obj.get("follow_ups", []) if str(x).strip()]
@@ -78,10 +81,17 @@ def ingest_dir(
     limit_blocks: Optional[int] = None,
     dry_run: bool = False,
     sleep_s: float = 0.2,
+    on_event=None,
 ) -> dict:
+    """on_event(kind, data)：file_start / file_skip / file_done / file_failed /
+    card_done / delta（AI thinking 与输出增量）。"""
     root = Path(root).expanduser().resolve()
     if not root.is_dir():
         raise NotADirectoryError(f"目录不存在: {root}")
+
+    def emit(kind: str, **data) -> None:
+        if on_event:
+            on_event(kind, data)
 
     files = iter_source_files(root)
     if limit_files:
@@ -96,31 +106,35 @@ def ingest_dir(
             sha = file_sha256(fp)
             if db.source_sha(str(fp)) == sha:
                 stats["files_skipped"] += 1
+                emit("file_skip", file=rel)
                 continue
             text = extract_text(fp)
             blocks = chunk_qa(text, source_name=fp.stem)
         except ExtractError as e:
-            print(f"  [跳过] {rel}: {e}")
             stats["files_failed"] += 1
+            emit("file_failed", file=rel, error=str(e))
             continue
 
         stats["blocks_found"] += len(blocks)
         if dry_run:
             stats["files_done"] += 1
-            print(f"  [dry-run] {rel}: {len(blocks)} 个 Q&A 块"
-                  + (f"，示例: {blocks[0].question[:40]}" if blocks else ""))
+            emit("file_done", file=rel, cards=0, dry_run=True, blocks=len(blocks))
             continue
 
         if llm is None:
-            raise RuntimeError("ingest 需要 LLM（未配置 API key 时只能 --dry-run）")
+            raise RuntimeError("ingest 需要 LLM（未配置 API key 时只能 dry-run）")
 
+        emit("file_start", file=rel, blocks=len(blocks))
         source_id = db.upsert_source(str(fp), sha, fp.stem)
         n_ok = 0
         for i, block in enumerate(blocks):
             if limit_blocks and n_ok >= limit_blocks:
                 break
             try:
-                card = structure_block(llm, block)
+                def on_delta(dtype, text, _i=i):
+                    emit("delta", delta_kind=dtype, text=text)
+
+                card = structure_block(llm, block, on_delta=on_delta)
                 db.insert_card(
                     question=card["question"],
                     answer_points=card["answer_points"],
@@ -132,14 +146,17 @@ def ingest_dir(
                 )
                 n_ok += 1
                 stats["cards_added"] += 1
+                emit("card_done", question=card["question"][:80], tags=card["topic_tags"])
             except Exception as e:
                 stats["cards_failed"] += 1
-                print(f"  [卡失败] {rel} 块{i}: {e}")
+                emit("card_failed", file=rel, block=i, error=str(e)[:200])
             if sleep_s:
                 time.sleep(sleep_s)
 
         db.update_source_count(source_id)
         stats["files_done"] += 1
-        print(f"  [完成] {rel}: +{n_ok} 卡（累计 {stats['cards_added']}）")
+        emit("file_done", file=rel, cards=n_ok,
+             progress=(stats["files_done"] + stats["files_skipped"] + stats["files_failed"])
+             / max(stats["files_total"], 1))
 
     return stats
