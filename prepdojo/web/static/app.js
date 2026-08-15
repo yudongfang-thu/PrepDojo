@@ -48,15 +48,44 @@ const TEMPLATES = {
 };
 
 // ---------- 导航 ----------
-const pages = ["coding", "quiz", "stats"];
+const pages = ["home", "coding", "quiz", "stats"];
 function showPage(name) {
   pages.forEach(p => {
-    $("page-" + p).classList.toggle("hidden", p !== name);
+    const el = $("page-" + p);
+    if (el) el.classList.toggle("hidden", p !== name);
     $("nav-" + p).classList.toggle("active", p === name);
   });
   if (name === "stats") loadStats();
+  if (name === "home") loadHeroStats();
 }
 pages.forEach(p => $("nav-" + p).onclick = () => showPage(p));
+
+async function loadHeroStats() {
+  try {
+    const [s, h] = await Promise.all([api("/api/stats"), api("/api/health")]);
+    const ac = problems.filter(p => p.ever_ac).length;
+    const items = [
+      [s.cards, "八股题卡（来自你的资料）"],
+      [s.learned_cards, "已学习"],
+      [s.problems, "代码题"],
+      [`${ac}`, "已攻克"],
+      [h.llm_ready ? "已就绪" : "未配置", "AI（" + (h.model || "判题可用") + "）"],
+    ];
+    $("hero-stats").innerHTML = items.map(([v, k]) =>
+      `<div class="hs"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join("");
+  } catch {}
+}
+
+// 模式卡片点击路由
+document.querySelectorAll(".mode-card").forEach(card => {
+  card.onclick = () => {
+    const goto = card.dataset.goto;
+    if (goto === "coding") showPage("coding");
+    else if (goto === "coding-judge") { showPage("coding"); alert("打开任意题目，点「🤖 AI 判题」即可；也可直接用「🧑‍🏫 问 AI 教练」对话。"); }
+    else if (goto === "quiz-learn") { showPage("quiz"); setQuizMode("learn"); }
+    else if (goto === "quiz-test") { showPage("quiz"); setQuizMode("test"); }
+  };
+});
 
 // ---------- LLM 徽标 ----------
 async function refreshBadge() {
@@ -609,7 +638,7 @@ async function loadStats() {
 initEditor();
 setEditorCode(TEMPLATES.python, "python");
 refreshBadge();
-loadProblems();
+loadProblems().then(loadHeroStats);
 loadTags();
 loadLearnTags();
 setQuizMode("learn");

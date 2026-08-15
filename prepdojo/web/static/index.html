@@ -80,19 +80,103 @@ textarea.answer { width:100%; height:180px; background:var(--panel2); color:var(
   color:var(--muted); font-size:12.5px; padding:6px 10px; }
 h2.sec { font-size:16px; margin:4px 0 12px; }
 a { color:var(--accent); }
+code { background:var(--panel2); padding:1px 6px; border-radius:5px; font-size:12.5px; }
+
+/* 首页 */
+.hero { padding:26px 28px; }
+.hero-stats { display:flex; gap:26px; margin-top:18px; flex-wrap:wrap; }
+.hero-stats .hs { text-align:left; }
+.hero-stats .hs b { font-size:22px; display:block; }
+.hero-stats .hs span { font-size:12.5px; color:var(--muted); }
+.mode-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; }
+.mode-card { cursor:pointer; transition:border-color .15s, transform .1s; }
+.mode-card:hover { border-color:var(--accent); transform:translateY(-2px); }
+.mode-card .mode-icon { font-size:28px; margin-bottom:8px; }
+.mode-card b { display:block; margin-bottom:6px; font-size:15px; }
+.mode-card p { margin:0; font-size:13.5px; color:var(--muted); line-height:1.7; }
+.diff-table td, .diff-table th { padding:10px 12px; vertical-align:top; }
+.diff-table td.good { color:var(--text); }
+.diff-table td:not(.good):not(:first-child) { color:var(--muted); }
 </style>
 </head>
 <body>
 <header>
   <div class="logo">Prep<em>Dojo</em> <span class="muted" style="font-size:12px">秋招刷题小助手</span></div>
   <nav>
-    <button id="nav-coding" class="active">代码题</button>
+    <button id="nav-home" class="active">首页</button>
+    <button id="nav-coding">代码题</button>
     <button id="nav-quiz">八股</button>
     <button id="nav-stats">概览</button>
   </nav>
   <span id="llm-badge"></span>
 </header>
 <main>
+  <!-- 首页 -->
+  <section id="page-home">
+    <div class="hero card">
+      <h1 style="margin:6px 0 8px;font-size:26px">本地优先的 AI 驱动刷题训练场</h1>
+      <p class="muted" style="margin:0;font-size:15px">
+        代码题本地沙箱判题、AI 可<span style="color:var(--accent)">亲自运行代码</span>后再判定讲解；
+        八股从<span style="color:var(--accent)">你自己的资料</span>生成题卡，AI 面试官打分追问。
+        所有数据只留在你的电脑上。</p>
+      <div class="hero-stats" id="hero-stats"></div>
+    </div>
+
+    <h2 class="sec" style="margin-top:22px">选择训练模式</h2>
+    <div class="mode-grid">
+      <div class="mode-card card" data-goto="coding">
+        <div class="mode-icon">💻</div>
+        <b>代码题 · 沙箱判题</b>
+        <p>20 道经典题，本地判题五态（AC/WA/TLE/MLE/RE），Python3 / C++17。
+          提交记录自动沉淀：<b>错题本零管理</b>——没 AC 的自动进、AC 自动出，一键随机重练。</p>
+      </div>
+      <div class="mode-card card" data-goto="coding-judge">
+        <div class="mode-icon">🤖</div>
+        <b>AI 判题 · 先验证后分析</b>
+        <p>AI 被强制<b>先调用沙箱</b>跑全部用例、再自主构造边界输入实测，然后才输出报告：
+          判定、复杂度、边界分析、<b>更优解法推荐</b>及背后知识点。判定来自事实，不来自猜测。</p>
+      </div>
+      <div class="mode-card card" data-goto="quiz-learn">
+        <div class="mode-icon">📖</div>
+        <b>八股 · 学习模式</b>
+        <p>先自己想 → 看要点 → AI 讲解（核心/类比/记忆口诀）→ 标记已学会。
+          学习状态两态极简，测验<b>默认只考已学</b>的——学都没学的题不浪费你时间。</p>
+      </div>
+      <div class="mode-card card" data-goto="quiz-test">
+        <div class="mode-icon">🎯</div>
+        <b>八股 · AI 面试官测验</b>
+        <p>大厂面试官人设，三种风格：<b>标准 / 严格 / 压力面</b>。
+          按要点逐条打分、给追问逼出知识边界，评分宁严勿松——这是练习不是客套。</p>
+      </div>
+    </div>
+
+    <h2 class="sec" style="margin-top:26px">与在线刷题平台的区别</h2>
+    <table class="diff-table">
+      <thead><tr><th style="width:170px"></th><th>PrepDojo（本地）</th><th>在线平台（LeetCode / 牛客等）</th></tr></thead>
+      <tbody>
+        <tr><td><b>你的数据归属</b></td>
+        <td class="good">全部在本机 <code>data/</code>，练习记录/知识库永不上传</td>
+        <td>云端账号，平台掌握你的全部数据</td></tr>
+        <tr><td><b>题库来源</b></td>
+        <td class="good">任何你搜集的 PDF / Markdown 八股一键结构化为题卡（题卡库=你的资料）</td>
+        <td>平台定什么你刷什么，你的私有复习资料进不去</td></tr>
+        <tr><td><b>AI 判题方式</b></td>
+        <td class="good">AI 可调用本地沙箱：先跑代码、构造边界输入实测，再分析；对错以测试用例为事实</td>
+        <td>AI 助手纯对话式，不跑你的代码，分析基于猜测</td></tr>
+        <tr><td><b>八股训练</b></td>
+        <td class="good">先学后测闭环：学习状态 + 仅已学抽题 + 面试官打分追问</td>
+        <td>八股题库静态浏览，无针对你知识库的评估</td></tr>
+        <tr><td><b>错题管理</b></td>
+        <td class="good">零管理：提交未 AC 自动进错题本，AC 自动移出</td>
+        <td>收藏夹手动维护</td></tr>
+        <tr><td><b>成本</b></td>
+        <td class="good">开源免费；AI 走自己的 key，全量知识接入约 ¥4</td>
+        <td>会员制订阅</td></tr>
+      </tbody>
+    </table>
+    <p class="muted" style="margin-top:14px">一句话：在线平台给你<b>它的题库</b>，PrepDojo 给你<b>你自己的训练场</b>。</p>
+  </section>
+
   <!-- 代码题 -->
   <section id="page-coding">
     <div id="problem-list-view">
