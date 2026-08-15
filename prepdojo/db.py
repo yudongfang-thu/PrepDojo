@@ -137,7 +137,7 @@ class DB:
 
     def source_sha(self, path: str) -> Optional[str]:
         row = self.execute("SELECT sha256 FROM sources WHERE path=?", (path,)).fetchone()
-        return row["sha"] if row else None
+        return row["sha256"] if row else None
 
     def update_source_count(self, source_id: int) -> None:
         self.execute(

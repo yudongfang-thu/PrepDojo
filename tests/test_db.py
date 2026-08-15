@@ -71,3 +71,13 @@ def test_write_persists_across_processes(tmp_path):
     fresh = sqlite3.connect(db_path)  # 独立连接验证
     n = fresh.execute("SELECT COUNT(*) FROM coding_problems").fetchone()[0]
     assert n == 20, f"数据未持久化：仅 {n} 行"
+
+
+def test_source_sha_incremental_lookup(tmp_path):
+    """回归测试：同一文件二次接入应命中 sha 跳过（此前列名 bug 会 IndexError）。"""
+    db = make_db(tmp_path)
+    assert db.source_sha("/not/exist.pdf") is None  # 空表路径
+    db.upsert_source("/a/b.pdf", "abc123", "b")
+    assert db.source_sha("/a/b.pdf") == "abc123"  # 命中路径（曾在此崩溃）
+    db.upsert_source("/a/b.pdf", "new456", "b")
+    assert db.source_sha("/a/b.pdf") == "new456"
