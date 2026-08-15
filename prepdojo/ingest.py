@@ -16,7 +16,8 @@ from .db import DB
 from .extract import ExtractError, QABlock, chunk_qa, extract_text, iter_source_files
 from .llm import LLMClient
 
-CARD_SYSTEM_PROMPT = """你是一位在一线大厂工作多年的资深技术面试官，负责把八股资料加工成面试练习题卡。
+CARD_SYSTEM_PROMPT = """（思考从简，尽快输出最终 JSON。）
+你是一位在一线大厂工作多年的资深技术面试官，负责把八股资料加工成面试练习题卡。
 要求：
 1. question：把原始问题改写得更清晰、更像面试官的提问口吻；如果原材料没有明确问题，则根据内容自拟一个高质量问题。
 2. answer_points：3-8 条答案要点，每条一句话，覆盖原材料的关键信息；宁可具体不要空泛。
@@ -49,7 +50,7 @@ def structure_block(llm: LLMClient, block: QABlock,
         source_name=block.source_name or "未命名材料",
         raw=block.raw,
     )
-    out = llm.stream_json(CARD_SYSTEM_PROMPT, user, max_tokens=1500,
+    out = llm.stream_json(CARD_SYSTEM_PROMPT, user, max_tokens=4000,
                           on_delta=on_delta)
     obj = out["json"]
     question = (obj.get("question") or block.question or "").strip()
