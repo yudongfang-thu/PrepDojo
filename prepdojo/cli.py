@@ -94,13 +94,18 @@ def cmd_serve(cfg: Config, args: argparse.Namespace) -> None:
     ensure_dirs()
     import uvicorn
 
+    from .seed_loader import load_seed_dir
     from .web.server import create_app
 
     db = _db(cfg)
+    # 首次使用自动导入种子题，朋友拿到包即可一条命令开玩
+    if db.stats()["problems"] == 0:
+        n = load_seed_dir(db, SEEDS_DIR / "coding")
+        print(f"[首次启动] 已自动导入 {n} 道种子代码题")
     app = create_app(cfg, db)
     if not cfg.llm_ready:
-        print("[提示] 未配置 LLM API key：判题可用，AI 点评/八股打分不可用。"
-              "配置方法见 data/config.yaml。")
+        print("[提示] 未配置 LLM API key：判题/学习可用，AI 点评/讲解/八股打分不可用。"
+              "配置方法见 data/config.yaml 或 README。")
     print(f"\n  PrepDojo 已启动: http://localhost:{args.port}\n")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
 
