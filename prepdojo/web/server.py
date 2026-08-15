@@ -5,6 +5,7 @@ LLM 未配置时：判题完全可用；AI 点评 / 八股打分返回明确提�
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Optional
 
@@ -30,6 +31,7 @@ class SubmitReq(BaseModel):
 class GradeReq(BaseModel):
     card_id: str
     answer: str
+    style: str = "standard"  # standard / strict / pressure
 
 
 class FollowupReq(BaseModel):
@@ -37,6 +39,14 @@ class FollowupReq(BaseModel):
     question: str
     answer: str
     context_answer: Optional[str] = None
+    style: str = "standard"
+
+
+class ChatReq(BaseModel):
+    messages: list[dict]  # [{"role": "user"/"assistant", "content": "..."}]
+    code: Optional[str] = None
+    language: str = "python"
+    last_submission_id: Optional[int] = None
 
 
 def _llm(cfg: Config) -> Optional[LLMClient]:
@@ -165,7 +175,7 @@ def create_app(cfg: Config, db: DB) -> FastAPI:
         from ..quiz import grade_answer
 
         try:
-            result = grade_answer(llm, card, req.answer)
+            result = grade_answer(llm, card, req.answer, style=req.style)
         except Exception as e:
             raise HTTPException(502, f"打分失败: {e}")
         db.record_attempt(card["id"], card["question"], req.answer,
@@ -184,12 +194,81 @@ def create_app(cfg: Config, db: DB) -> FastAPI:
         from ..quiz import grade_followup
 
         try:
-            result = grade_followup(llm, card, req.question, req.answer, req.context_answer)
+            result = grade_followup(llm, card, req.question, req.answer,
+                                    req.context_answer, style=req.style)
         except Exception as e:
             raise HTTPException(502, f"追问评分失败: {e}")
         db.record_attempt(card["id"], req.question, req.answer,
                           result.get("score", 0), result, mode="follow_up")
         return result
+
+    # ---------- AI 讲题教练（沙箱工具循环 + SSE 流式） ----------
+
+    @app.post("/api/chat/problem/{pid}")
+    async def chat_problem(pid: str, req: ChatReq):
+        problem = db.get_problem(pid)
+        if not problem:
+            raise HTTPException(404, "题目不存在")
+        llm = _llm(cfg)
+        if llm is None:
+            raise HTTPException(503, _LLM_HINT)
+        from ..chat import COACH_SYSTEM, SandboxTools, build_problem_context, chat_step
+
+        last_verdict, last_detail = None, None
+        if req.last_submission_id:
+            sub = db.get_submission(req.last_submission_id)
+            if sub:
+                last_verdict = sub["verdict"]
+                cs = sub["detail"].get("cases", [])
+                last_detail = "\n".join(
+                    f"用例{c.get('idx')}: {c.get('verdict')}" for c in cs[:12])
+
+        context = build_problem_context(
+            problem, req.code or "", req.language, last_verdict, last_detail)
+        history = [{"role": "system", "content": COACH_SYSTEM + "\n\n" + context}]
+        history += [m for m in req.messages if m.get("role") in ("user", "assistant")
+                    and m.get("content")]
+
+        tools = SandboxTools(
+            get_problem=lambda pid_: db.get_problem(pid_),
+            load_cases=lambda pid_: _load_cases(db, pid_),
+            cpp_compiler=cfg.cpp_compiler,
+        )
+
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+
+        async def gen():
+            import queue
+
+            q: queue.Queue = queue.Queue()
+
+            def on_event(kind: str, data: dict) -> None:
+                q.put((kind, data))
+
+            def run():
+                try:
+                    chat_step(llm, tools, history, on_event=on_event)
+                except Exception as e:
+                    q.put(("error", {"message": str(e)}))
+                finally:
+                    q.put(("done", {}))
+
+            task = loop.run_in_executor(None, run)
+            while True:
+                kind, data = await loop.run_in_executor(None, q.get)
+                payload = json.dumps({"event": kind, **data}, ensure_ascii=False)
+                yield f"data: {payload}\n\n"
+                if kind in ("done", "error"):
+                    break
+            await task
+
+        from fastapi.responses import StreamingResponse
+
+        return StreamingResponse(gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache",
+                                          "X-Accel-Buffering": "no"})
 
     @app.exception_handler(503)
     async def _(request, exc):

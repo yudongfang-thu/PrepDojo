@@ -72,6 +72,12 @@ textarea.answer { width:100%; height:180px; background:var(--panel2); color:var(
 .stats-grid .num { font-size:30px; font-weight:800; }
 .followup-box { border-left:3px solid var(--purple); padding:10px 14px; background:var(--panel2);
   border-radius:8px; margin:12px 0; }
+.coach-msg { margin:8px 0; padding:10px 12px; border-radius:8px; font-size:14px; line-height:1.7;
+  white-space:pre-wrap; word-break:break-word; }
+.coach-msg.user { background:color-mix(in srgb, var(--accent) 14%, transparent); }
+.coach-msg.assistant { background:var(--panel2); }
+.coach-msg.tool { background:transparent; border:1px dashed var(--border);
+  color:var(--muted); font-size:12.5px; padding:6px 10px; }
 h2.sec { font-size:16px; margin:4px 0 12px; }
 a { color:var(--accent); }
 </style>
@@ -107,13 +113,27 @@ a { color:var(--accent); }
         <div class="card"><div id="statement"></div></div>
       </div>
       <div>
-        <div class="toolbar">
-          <select id="lang-select"><option value="python">Python 3</option><option value="cpp">C++ 17</option></select>
-          <button class="btn primary" id="submit-btn">提交判题</button>
-          <button class="btn" id="review-btn" disabled>AI 点评</button>
+        <div class="toolbar" style="align-items:stretch">
+          <div style="flex:1;display:flex;gap:10px;align-items:center">
+            <select id="lang-select"><option value="python">Python 3</option><option value="cpp">C++ 17</option></select>
+            <button class="btn primary" id="submit-btn">提交判题</button>
+            <button class="btn" id="review-btn" disabled>AI 点评</button>
+            <button class="btn" id="ask-coach-btn">🧑‍🏫 问 AI 教练</button>
+          </div>
         </div>
         <div id="editor-holder"></div>
         <div id="result-area" style="margin-top:14px"></div>
+        <div id="coach-panel" class="card hidden" style="margin-top:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <b>AI 讲题教练</b><span class="muted" style="font-size:12px">可自主运行判题沙箱验证代码</span>
+          </div>
+          <div id="coach-messages" style="max-height:360px;overflow:auto;margin:10px 0"></div>
+          <div class="toolbar" style="margin:0">
+            <input id="coach-input" placeholder="例：我这题哪里会超时？/ 用样例讲讲思路 / 帮我构造一个能暴露 bug 的输入"
+              style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px">
+            <button class="btn primary" id="coach-send-btn">发送</button>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -124,6 +144,11 @@ a { color:var(--accent); }
       <h2 class="sec">八股陪练（抽题 → 作答 → AI 打分 → 追问）</h2>
       <div class="toolbar">
         <select id="quiz-tag-select"><option value="">全部标签</option></select>
+        <select id="quiz-style">
+          <option value="standard">标准面试官</option>
+          <option value="strict">严格面试官</option>
+          <option value="pressure">压力面面试官</option>
+        </select>
         <select id="quiz-num"><option value="5">5 题</option><option value="10">10 题</option><option value="20">20 题</option></select>
         <button class="btn primary" id="quiz-start-btn">开始抽题</button>
       </div>

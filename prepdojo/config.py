@@ -88,10 +88,7 @@ def load_config() -> Config:
 def example_config_yaml() -> str:
     return """# PrepDojo 配置（本文件位于 data/ 目录，已被 .gitignore 排除）
 llm:
-  # 三选一：
-  # 1) DeepSeek 官方:      api_key + base_url https://api.deepseek.com/v1 + model deepseek-chat
-  # 2) 硅基流动:           api_key + base_url https://api.siliconflow.cn/v1 + model deepseek-ai/DeepSeek-V3
-  # 3) Ollama 本地模型:    api_key 任意 + base_url http://localhost:11434/v1 + model qwen2.5:7b
+  # DeepSeek 官方 API（https://platform.deepseek.com 申请）
   api_key: "sk-..."
   base_url: "https://api.deepseek.com/v1"
   model: "deepseek-chat"

@@ -108,6 +108,9 @@ async function openProblem(pid) {
   $("result-area").innerHTML = "";
   $("review-btn").disabled = true;
   lastSubmission = null;
+  coachHistory = [];
+  const cm = $("coach-messages");
+  if (cm) cm.innerHTML = "";
 }
 
 $("back-btn").onclick = () => {
@@ -183,6 +186,91 @@ $("review-btn").onclick = async () => {
   }
 };
 
+// ---------- AI 讲题教练（SSE 流式 + 沙箱工具轨迹） ----------
+let coachHistory = [];
+
+function coachRender(role, text, cls) {
+  const div = document.createElement("div");
+  div.className = `coach-msg ${cls}`;
+  div.textContent = text;
+  $("coach-messages").appendChild(div);
+  $("coach-messages").scrollTop = 1e9;
+  return div;
+}
+
+$("ask-coach-btn").onclick = () => {
+  const p = $("coach-panel");
+  p.classList.toggle("hidden");
+  if (!p.classList.contains("hidden")) $("coach-input").focus();
+};
+
+async function coachSend() {
+  const input = $("coach-input");
+  const text = input.value.trim();
+  if (!text || !currentProblem) return;
+  input.value = "";
+  coachRender("user", text, "user");
+  coachHistory.push({ role: "user", content: text });
+  const btn = $("coach-send-btn");
+  btn.disabled = true;
+  let assistantDiv = coachRender("assistant", "思考中…", "assistant");
+  let reply = "";
+  try {
+    const resp = await fetch(`/api/chat/problem/${currentProblem.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: coachHistory.slice(0, -1),
+        code: getEditorCode(),
+        language: $("lang-select").value,
+        last_submission_id: lastSubmission ? lastSubmission.submission_id : null,
+      }),
+    });
+    if (!resp.ok) {
+      let msg = resp.statusText;
+      try { msg = (await resp.json()).detail || msg; } catch {}
+      throw new Error(msg);
+    }
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
+        if (!chunk.startsWith("data: ")) continue;
+        const ev = JSON.parse(chunk.slice(6));
+        if (ev.event === "tool_start") {
+          coachRender("tool", `⚙️ ${ev.name}(${(ev.args.code || ev.args.problem_id || "")
+            .slice(0, 40).replace(/\n/g, "⏎")}…)`, "tool");
+          assistantDiv = coachRender("assistant", "", "assistant");
+          reply = "";
+        } else if (ev.event === "tool_done") {
+          coachRender("tool", `✅ ${ev.summary}`, "tool");
+        } else if (ev.event === "reply") {
+          reply = ev.text;
+          assistantDiv.textContent = reply;
+        } else if (ev.event === "error") {
+          assistantDiv.textContent = "出错：" + ev.message;
+        }
+        $("coach-messages").scrollTop = 1e9;
+      }
+    }
+    if (reply) coachHistory.push({ role: "assistant", content: reply });
+  } catch (e) {
+    assistantDiv.textContent = "请求失败：" + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+$("coach-send-btn").onclick = coachSend;
+$("coach-input").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.isComposing) coachSend();
+});
+
 // ---------- 八股 ----------
 let quizQueue = [], quizIdx = 0, quizLastAnswer = "";
 
@@ -234,7 +322,7 @@ $("quiz-grade-btn").onclick = async () => {
   try {
     const r = await api("/api/quiz/grade", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ card_id: c.id, answer: ans }),
+      body: JSON.stringify({ card_id: c.id, answer: ans, style: $("quiz-style").value }),
     });
     renderQuizFeedback(r, c);
   } catch (e) {
@@ -277,7 +365,7 @@ function renderQuizFeedback(r, c) {
       const rr = await api("/api/quiz/followup", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ card_id: c.id, question: r.follow_up, answer: fa,
-          context_answer: quizLastAnswer }),
+          context_answer: quizLastAnswer, style: $("quiz-style").value }),
       });
       $("followup-result").innerHTML = `
         <div class="card"><b class="score-big" style="font-size:24px">${rr.score}/10</b>
