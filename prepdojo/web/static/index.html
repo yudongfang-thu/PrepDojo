@@ -85,16 +85,18 @@ code { background:var(--panel2); padding:1px 6px; border-radius:5px; font-size:1
 /* 首页 */
 .hero { padding:26px 28px; }
 .hero-stats { display:flex; gap:26px; margin-top:18px; flex-wrap:wrap; }
-.hero-stats .hs { text-align:left; }
 .hero-stats .hs b { font-size:22px; display:block; }
 .hero-stats .hs span { font-size:12.5px; color:var(--muted); }
-.mode-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; }
-.mode-card { cursor:pointer; transition:border-color .15s, transform .1s; }
+.mode-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:14px; }
+.mode-card { cursor:pointer; transition:border-color .15s, transform .1s; position:relative; }
 .mode-card:hover { border-color:var(--accent); transform:translateY(-2px); }
-.mode-card .mode-icon { font-size:28px; margin-bottom:8px; }
-.mode-card b { display:block; margin-bottom:6px; font-size:15px; }
-.mode-card p { margin:0; font-size:13.5px; color:var(--muted); line-height:1.7; }
-.diff-table td, .diff-table th { padding:10px 12px; vertical-align:top; }
+.mode-card .mode-icon { font-size:26px; margin-bottom:8px; }
+.mode-card b { display:block; margin-bottom:8px; }
+ul.feat { margin:0; padding-left:18px; }
+ul.feat li { font-size:13.5px; color:var(--muted); line-height:1.8; }
+ul.feat li b { display:inline; font-size:13.5px; color:var(--text); }
+.enter-hint { position:absolute; top:16px; right:18px; font-size:12px; color:var(--accent); }
+.diff-table td, .diff-table th { padding:9px 12px; vertical-align:top; }
 .diff-table td.good { color:var(--text); }
 .diff-table td:not(.good):not(:first-child) { color:var(--muted); }
 </style>
@@ -114,67 +116,63 @@ code { background:var(--panel2); padding:1px 6px; border-radius:5px; font-size:1
   <!-- 首页 -->
   <section id="page-home">
     <div class="hero card">
-      <h1 style="margin:6px 0 8px;font-size:26px">本地优先的 AI 驱动刷题训练场</h1>
+      <h1 style="margin:6px 0 8px;font-size:26px">AI 驱动刷题训练场</h1>
       <p class="muted" style="margin:0;font-size:15px">
-        代码题本地沙箱判题、AI 可<span style="color:var(--accent)">亲自运行代码</span>后再判定讲解；
-        八股从<span style="color:var(--accent)">你自己的资料</span>生成题卡，AI 面试官打分追问。
-        所有数据只留在你的电脑上。</p>
+        代码题与八股两大训练：AI 能<span style="color:var(--accent)">亲自运行你的代码</span>验证后再判定讲解，
+        八股题卡来自<span style="color:var(--accent)">你自己的资料</span>；数据只留在本机。</p>
       <div class="hero-stats" id="hero-stats"></div>
     </div>
 
-    <h2 class="sec" style="margin-top:22px">选择训练模式</h2>
-    <div class="mode-grid">
+    <div class="mode-grid" style="margin-top:16px">
       <div class="mode-card card" data-goto="coding">
         <div class="mode-icon">💻</div>
-        <b>代码题 · 沙箱判题</b>
-        <p>20 道经典题，本地判题五态（AC/WA/TLE/MLE/RE），Python3 / C++17。
-          提交记录自动沉淀：<b>错题本零管理</b>——没 AC 的自动进、AC 自动出，一键随机重练。</p>
-      </div>
-      <div class="mode-card card" data-goto="coding-judge">
-        <div class="mode-icon">🤖</div>
-        <b>AI 判题 · 先验证后分析</b>
-        <p>AI 被强制<b>先调用沙箱</b>跑全部用例、再自主构造边界输入实测，然后才输出报告：
-          判定、复杂度、边界分析、<b>更优解法推荐</b>及背后知识点。判定来自事实，不来自猜测。</p>
+        <b style="font-size:17px">代码题</b>
+        <ul class="feat">
+          <li><b>本地沙箱判题</b>：五态判定（AC/WA/TLE/MLE/RE），Python3 / C++17，对错以测试用例为准</li>
+          <li><b>AI 判题</b>：AI 先调沙箱跑全部用例、构造边界输入实测，再出报告——含复杂度、更优解法推荐与知识点讲解</li>
+          <li><b>AI 教练对话</b>：贴代码提问，AI 现场跑代码定位 bug</li>
+          <li><b>错题本</b>：没 AC 自动进、AC 自动出，一键随机重练</li>
+        </ul>
+        <span class="enter-hint">点击进入 →</span>
       </div>
       <div class="mode-card card" data-goto="quiz-learn">
         <div class="mode-icon">📖</div>
-        <b>八股 · 学习模式</b>
-        <p>先自己想 → 看要点 → AI 讲解（核心/类比/记忆口诀）→ 标记已学会。
-          学习状态两态极简，测验<b>默认只考已学</b>的——学都没学的题不浪费你时间。</p>
-      </div>
-      <div class="mode-card card" data-goto="quiz-test">
-        <div class="mode-icon">🎯</div>
-        <b>八股 · AI 面试官测验</b>
-        <p>大厂面试官人设，三种风格：<b>标准 / 严格 / 压力面</b>。
-          按要点逐条打分、给追问逼出知识边界，评分宁严勿松——这是练习不是客套。</p>
+        <b style="font-size:17px">八股</b>
+        <ul class="feat">
+          <li><b>自己的题库</b>：任何 PDF / Markdown 八股资料一键结构化为题卡（附来源引用）</li>
+          <li><b>学习模式</b>：先自己想 → 看要点 → AI 讲解（核心 / 类比 / 记忆口诀）→ 标记已学会</li>
+          <li><b>AI 面试官测验</b>：标准 / 严格 / 压力面三种风格，按要点逐条打分 + 追问</li>
+          <li><b>先学后测</b>：测验默认只从已学的卡抽题</li>
+        </ul>
+        <span class="enter-hint">点击进入 →</span>
       </div>
     </div>
 
-    <h2 class="sec" style="margin-top:26px">与在线刷题平台的区别</h2>
+    <div class="card" style="margin-top:14px;padding:12px 18px">
+      <b>AI 成本实测</b><span class="muted">（deepseek-v4-flash）</span>：
+      全量接入 92 个 PDF（51 万字 → 约 800 张题卡）约 100 万 token；
+      一次 AI 判题 1–3 万 token；一次讲解 / 打分 2–4 千 token——
+      <b>整个复习周期成本预计几元到十几元</b>，判题与学习进度管理完全免费（不调 AI）。
+    </div>
+
+    <h2 class="sec" style="margin-top:24px">与在线刷题平台的区别</h2>
     <table class="diff-table">
-      <thead><tr><th style="width:170px"></th><th>PrepDojo（本地）</th><th>在线平台（LeetCode / 牛客等）</th></tr></thead>
+      <thead><tr><th style="width:130px"></th><th>PrepDojo</th><th>在线平台</th></tr></thead>
       <tbody>
-        <tr><td><b>你的数据归属</b></td>
-        <td class="good">全部在本机 <code>data/</code>，练习记录/知识库永不上传</td>
-        <td>云端账号，平台掌握你的全部数据</td></tr>
         <tr><td><b>题库来源</b></td>
-        <td class="good">任何你搜集的 PDF / Markdown 八股一键结构化为题卡（题卡库=你的资料）</td>
-        <td>平台定什么你刷什么，你的私有复习资料进不去</td></tr>
-        <tr><td><b>AI 判题方式</b></td>
-        <td class="good">AI 可调用本地沙箱：先跑代码、构造边界输入实测，再分析；对错以测试用例为事实</td>
-        <td>AI 助手纯对话式，不跑你的代码，分析基于猜测</td></tr>
+          <td class="good">你搜集的资料 → AI 结构化题卡</td>
+          <td>平台定什么刷什么</td></tr>
+        <tr><td><b>AI 判题</b></td>
+          <td class="good">先跑沙箱实测再分析，对错来自事实</td>
+          <td>纯对话，不跑你的代码</td></tr>
         <tr><td><b>八股训练</b></td>
-        <td class="good">先学后测闭环：学习状态 + 仅已学抽题 + 面试官打分追问</td>
-        <td>八股题库静态浏览，无针对你知识库的评估</td></tr>
-        <tr><td><b>错题管理</b></td>
-        <td class="good">零管理：提交未 AC 自动进错题本，AC 自动移出</td>
-        <td>收藏夹手动维护</td></tr>
-        <tr><td><b>成本</b></td>
-        <td class="good">开源免费；AI 走自己的 key，全量知识接入约 ¥4</td>
-        <td>会员制订阅</td></tr>
+          <td class="good">先学后测 + 面试官打分追问</td>
+          <td>静态题库浏览</td></tr>
+        <tr><td><b>数据与成本</b></td>
+          <td class="good">数据在本机；AI 走自己的 key，周期个位数元</td>
+          <td>云端账号；会员订阅</td></tr>
       </tbody>
     </table>
-    <p class="muted" style="margin-top:14px">一句话：在线平台给你<b>它的题库</b>，PrepDojo 给你<b>你自己的训练场</b>。</p>
   </section>
 
   <!-- 代码题 -->

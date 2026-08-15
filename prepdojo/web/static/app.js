@@ -76,14 +76,12 @@ async function loadHeroStats() {
   } catch {}
 }
 
-// 模式卡片点击路由
+// 大类卡片点击路由
 document.querySelectorAll(".mode-card").forEach(card => {
   card.onclick = () => {
     const goto = card.dataset.goto;
     if (goto === "coding") showPage("coding");
-    else if (goto === "coding-judge") { showPage("coding"); alert("打开任意题目，点「🤖 AI 判题」即可；也可直接用「🧑‍🏫 问 AI 教练」对话。"); }
     else if (goto === "quiz-learn") { showPage("quiz"); setQuizMode("learn"); }
-    else if (goto === "quiz-test") { showPage("quiz"); setQuizMode("test"); }
   };
 });
 
