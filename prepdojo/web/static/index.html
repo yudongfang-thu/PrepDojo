@@ -36,19 +36,35 @@ main { padding:20px; max-width:1280px; margin:0 auto; }
 .grid2 { display:grid; grid-template-columns: minmax(340px, 2fr) minmax(420px, 3fr); gap:16px; }
 @media (max-width: 980px) { .grid2 { grid-template-columns: 1fr; } }
 
-/* 题目详情三列布局：题面 | 编辑器+结果 | AI 教练 */
-.detail-grid { display:grid; grid-template-columns: minmax(240px, 1fr) minmax(380px, 1.45fr) minmax(290px, 1fr); gap:16px; align-items:start; }
-@media (max-width: 1180px) {
-  .detail-grid { grid-template-columns: 1fr 1fr; }
-  .col-stmt { grid-column: 1 / -1; max-height:none !important; position:static !important; }
+/* 题目详情三列布局：题面 | 编辑器+结果 | AI 教练 —— 三列等高（锁定视口），各自内部滚动 */
+.detail-grid {
+  display: grid;
+  grid-template-columns: minmax(215px, 0.85fr) minmax(330px, 1.3fr) minmax(350px, 1.15fr);
+  gap: 16px;
+  height: calc(100vh - 104px);
+  align-items: stretch;
 }
-@media (max-width: 760px) { .detail-grid { grid-template-columns: 1fr; } }
-.col-stmt { max-height: calc(100vh - 110px); overflow:auto; position:sticky; top:66px; padding-right:4px; }
-.col-editor #editor-holder .CodeMirror { height: 62vh; border-radius:8px; border:1px solid var(--border); }
-.col-editor #fallback-editor { height: 62vh; }
-.col-editor #result-area { max-height: 34vh; overflow:auto; }
-.col-coach > .card { position:sticky; top:66px; display:flex; flex-direction:column; max-height: calc(100vh - 110px); }
-#coach-messages { flex:1; overflow-y:auto; min-height:220px; margin:10px 0; padding-right:4px; }
+.col-stmt { overflow-y: auto; padding-right: 4px; }
+.col-editor { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+.col-editor #editor-holder { flex: 1; min-height: 0; }
+.col-editor #editor-holder .CodeMirror { height: 100%; border-radius: 8px; border: 1px solid var(--border); }
+.col-editor #fallback-editor { height: 100%; }
+.col-editor #result-area { max-height: 30%; overflow-y: auto; flex-shrink: 0; margin-top: 12px; }
+.col-coach { display: flex; min-height: 0; }
+.col-coach > .card { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+#coach-messages { flex: 1; overflow-y: auto; min-height: 0; margin: 10px 0; padding-right: 4px; }
+@media (max-width: 1180px) {
+  .detail-grid { grid-template-columns: 1fr 1fr; height: auto; }
+  .col-stmt { grid-column: 1 / -1; overflow: visible; }
+  .col-editor #editor-holder .CodeMirror { height: 62vh; }
+  .col-coach { grid-column: 1 / -1; }
+  .col-coach > .card { max-height: 70vh; }
+  #coach-messages { min-height: 240px; }
+}
+@media (max-width: 760px) {
+  .detail-grid { grid-template-columns: 1fr; }
+  .col-editor #editor-holder .CodeMirror { height: 55vh; }
+}
 table { border-collapse:collapse; width:100%; font-size:13.5px; }
 th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--border); }
 th { color:var(--muted); font-weight:500; }
