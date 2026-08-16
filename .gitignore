@@ -25,3 +25,6 @@ data/
 
 # 判题临时产物
 tmp/judge/
+
+# ZCode 本地会话产物
+.zcode/

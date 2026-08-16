@@ -163,8 +163,24 @@ details.thinking .th-content { white-space:pre-wrap; color:var(--muted); font-st
     <button id="nav-stats">概览</button>
   </nav>
   <span id="llm-badge"></span>
+  <span id="user-badge" class="muted" style="font-size:12.5px;margin-left:10px"></span>
+  <button id="logout-btn" class="btn hidden" style="padding:4px 12px;font-size:12.5px;margin-left:8px">退出</button>
 </header>
 <main>
+  <!-- 登录（多用户模式） -->
+  <section id="page-login" class="hidden">
+    <div class="card" style="max-width:380px;margin:10vh auto 0;text-align:center">
+      <h2 class="sec" style="text-align:center">PrepDojo · 实验室内测</h2>
+      <p class="muted" style="font-size:13px;margin:6px 0 16px">账号由管理员创建，练习进度按人隔离</p>
+      <input id="login-username" placeholder="用户名" autocomplete="username"
+        style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:9px 12px;font-size:14px;margin-bottom:10px">
+      <input id="login-password" type="password" placeholder="密码" autocomplete="current-password"
+        style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:9px 12px;font-size:14px;margin-bottom:12px">
+      <button class="btn primary" id="login-btn" style="width:100%">登 录</button>
+      <p id="login-error" class="verdict-RE" style="font-size:13px;min-height:18px;margin:10px 0 0"></p>
+    </div>
+  </section>
+
   <!-- 首页 -->
   <section id="page-home">
     <div class="hero card">
@@ -445,8 +461,21 @@ details.thinking .th-content { white-space:pre-wrap; color:var(--muted); font-st
 
   <!-- 设置 -->
   <section id="page-settings" class="hidden">
-    <h2 class="sec">AI 服务设置（DeepSeek API）</h2>
-    <div class="card" style="max-width:640px">
+    <!-- 个人 API Key（多用户模式所有成员可见） -->
+    <div class="card" id="card-mykey" style="max-width:640px;margin-bottom:16px">
+      <h2 class="sec">我的 API Key（可选）</h2>
+      <p class="muted" style="font-size:13px">不填则使用服务器共享 Key（由管理员配置，费用站长出）；
+        填了自己的 Key 则 AI 功能走你自己的额度。<span id="mykey-status"></span></p>
+      <div class="toolbar">
+        <input id="mykey-input" type="password" placeholder="sk-...（留空提交 = 恢复使用服务器 Key）"
+          style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px">
+        <button class="btn primary" id="mykey-save-btn">保存</button>
+      </div>
+    </div>
+
+    <!-- 服务器全局 LLM 配置（仅管理员） -->
+    <div class="card" id="card-serverllm" style="max-width:640px;margin-bottom:16px">
+      <h2 class="sec">AI 服务设置（服务器全局 · 管理员）</h2>
       <div style="margin-bottom:12px">
         <label class="muted" style="font-size:13px">API Base URL</label>
         <input id="set-baseurl" style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px;margin-top:4px">
@@ -466,7 +495,24 @@ details.thinking .th-content { white-space:pre-wrap; color:var(--muted); font-st
         <button class="btn primary" id="set-save-btn">保存配置</button>
         <span id="set-status" class="muted"></span>
       </div>
-      <p class="muted" style="font-size:12.5px;margin-top:10px">key 只写入本机 data/config.yaml（已被 .gitignore 排除），不会进任何仓库。</p>
+      <p class="muted" style="font-size:12.5px;margin-top:10px">key 只写入服务器 data/config.yaml（.gitignore 排除），不会进任何仓库。</p>
+    </div>
+
+    <!-- 用户管理（仅管理员） -->
+    <div class="card" id="card-users" style="max-width:640px">
+      <h2 class="sec">用户管理（管理员）</h2>
+      <table id="users-table"><thead>
+        <tr><th>用户名</th><th>角色</th><th>今日 AI 调用</th><th>个人 Key</th><th></th></tr>
+      </thead><tbody></tbody></table>
+      <div class="toolbar" style="margin-top:12px">
+        <input id="au-name" placeholder="新用户名" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px">
+        <input id="au-pass" type="password" placeholder="初始密码（≥4 位）" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px">
+        <label style="font-size:13px;color:var(--muted);display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="au-admin">管理员
+        </label>
+        <button class="btn primary" id="au-add-btn">添加用户</button>
+      </div>
+      <p class="muted" id="au-status" style="font-size:12.5px;margin:6px 0 0">重置密码：点行内「重置」后输入新密码（弹窗）。</p>
     </div>
   </section>
 

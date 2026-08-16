@@ -1,9 +1,30 @@
-/* PrepDojo 前端：无构建 SPA（CDN CodeMirror 失败自动降级 textarea） */
+/* PrepDojo 前端：无构建 SPA（本地 CodeMirror，失败自动降级 textarea） */
 "use strict";
 
 const $ = (id) => document.getElementById(id);
+
+// ---------- 会话（多用户模式；单机模式 /api/me 恒返回 local） ----------
+let currentUser = null;
+
+function showLogin(msg) {
+  ["home", "coding", "quiz", "kb", "settings", "stats"].forEach(p =>
+    $("page-" + p).classList.add("hidden"));
+  $("page-login").classList.remove("hidden");
+  $("login-error").textContent = msg || "";
+  $("login-username").focus();
+}
+
+function applyUserUI() {
+  const u = currentUser;
+  if (!u || !u.multiuser) return; // 单机模式：不显示用户相关 UI
+  $("user-badge").textContent = u.username + (u.is_admin ? " · 管理员" : "");
+  $("logout-btn").classList.remove("hidden");
+  if (!u.is_admin) $("nav-kb").classList.add("hidden"); // 知识库管理仅管理员
+}
+
 const api = async (path, opts) => {
   const r = await fetch(path, opts);
+  if (r.status === 401 && currentUser !== null) { showLogin("登录已过期，请重新登录"); }
   if (!r.ok) {
     let msg = r.statusText;
     try { msg = (await r.json()).detail || msg; } catch {}
@@ -88,8 +109,7 @@ const TEMPLATES = {
 };
 
 // ---------- 导航 ----------
-const pages = ["home", "coding", "quiz", "kb", "settings", "stats"];
-function showPage(name) {
+const pages = ["home", "coding", "quiz", "kb", "settings", "stats"];function showPage(name) {
   pages.forEach(p => {
     const el = $("page-" + p);
     if (el) el.classList.toggle("hidden", p !== name);
@@ -191,8 +211,8 @@ async function openProblem(pid) {
   st += `\n\n（共 ${currentProblem.n_cases} 组测试用例；时限 ${currentProblem.time_limit_ms}ms）`;
   $("statement").textContent = st;
   const lang = $("lang-select").value;
-  // 草稿优先：用户上次写到一半的代码不丢
-  const draft = localStorage.getItem("prepdojo-draft-" + currentProblem.id + "-" + lang);
+  // 草稿优先：用户上次写到一半的代码不丢（多用户按人命名空间）
+  const draft = localStorage.getItem(draftKey(currentProblem.id, lang));
   setEditorCode(draft && draft.trim() ? draft : TEMPLATES[lang], lang);
   saveDraft();
   $("result-area").innerHTML = "";
@@ -206,9 +226,15 @@ $("back-btn").onclick = () => {
   $("problem-detail-view").classList.add("hidden");
   $("problem-list-view").classList.remove("hidden");
 };
+// 草稿键：单机模式保持旧格式（老用户草稿不丢）；多用户按人隔离
+function draftKey(pid, lang) {
+  const u = currentUser && currentUser.username && currentUser.username !== "local"
+    ? currentUser.username + "-" : "";
+  return "prepdojo-draft-" + u + pid + "-" + lang;
+}
 function saveDraft() {
   if (!currentProblem) return;
-  const key = "prepdojo-draft-" + currentProblem.id + "-" + $("lang-select").value;
+  const key = draftKey(currentProblem.id, $("lang-select").value);
   const code = getEditorCode();
   // 空或未改动的模板不存，避免草稿盖住未来的模板切换
   if (!code.trim() || code.trim() === TEMPLATES.python.trim() || code.trim() === TEMPLATES.cpp.trim())
@@ -222,7 +248,7 @@ $("lang-select").onchange = () => {
     setEditorCode(TEMPLATES[lang], lang);
   else if (currentProblem) {
     // 已有代码：切换语言时尝试恢复该语言的草稿，无草稿则给模板
-    const draft = localStorage.getItem("prepdojo-draft-" + currentProblem.id + "-" + lang);
+    const draft = localStorage.getItem(draftKey(currentProblem.id, lang));
     if (draft && draft.trim()) setEditorCode(draft, lang);
   }
 };
@@ -1021,6 +1047,12 @@ $("kb-import-btn").onclick = async () => {
 
 // ---------- 设置 ----------
 async function loadSettings() {
+  loadMyKey();
+  if (!currentUser || !currentUser.is_admin) {
+    $("card-serverllm").classList.add("hidden");
+    $("card-users").classList.add("hidden");
+    return;
+  }
   try {
     const d = await api("/api/llm/config");
     $("set-baseurl").value = d.base_url;
@@ -1032,7 +1064,79 @@ async function loadSettings() {
     $("set-key-masked").textContent = d.configured ? d.api_key_masked : "未配置";
     $("set-status").textContent = d.configured ? "● 已配置" : "○ 未配置";
   } catch {}
+  loadUsers();
 }
+
+// 个人 API Key
+async function loadMyKey() {
+  try {
+    const d = await api("/api/me/llm");
+    $("mykey-status").innerHTML = d.using_own_key
+      ? '当前：<b style="color:var(--green)">使用你自己的 Key</b>'
+      : (d.server_configured ? '当前：使用服务器共享 Key'
+         : '当前：<b style="color:var(--amber)">服务器未配置 Key</b>（可填自己的）');
+  } catch {}
+}
+$("mykey-save-btn").onclick = async () => {
+  try {
+    await api("/api/me/llm", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: $("mykey-input").value.trim() }),
+    });
+    $("mykey-input").value = "";
+    loadMyKey();
+  } catch (e) { alert("保存失败：" + e.message); }
+};
+
+// 用户管理（管理员）
+async function loadUsers() {
+  try {
+    const d = await api("/api/admin/users");
+    const tb = $("users-table").querySelector("tbody");
+    tb.innerHTML = d.users.map(u => `
+      <tr><td>${esc(u.username)}</td>
+        <td>${u.is_admin ? "管理员" : "成员"}</td>
+        <td class="muted">${u.llm_today}</td>
+        <td class="muted">${u.api_key ? "✔" : "—"}</td>
+        <td><button class="btn" style="padding:3px 10px;font-size:12px"
+            onclick="resetUserPass('${esc(u.username)}')">重置密码</button>
+          <button class="btn" style="padding:3px 10px;font-size:12px"
+            onclick="delUser('${esc(u.username)}')">删除</button></td></tr>`).join("");
+  } catch {}
+}
+$("au-add-btn").onclick = async () => {
+  const name = $("au-name").value.trim(), pass = $("au-pass").value;
+  if (!name || pass.length < 4) return alert("用户名必填，密码至少 4 位");
+  try {
+    await api("/api/admin/users", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: name, password: pass,
+        is_admin: $("au-admin").checked }),
+    });
+    $("au-name").value = ""; $("au-pass").value = ""; $("au-admin").checked = false;
+    loadUsers();
+  } catch (e) { alert("添加失败：" + e.message); }
+};
+async function resetUserPass(name) {
+  const pass = prompt(`为 ${name} 设置新密码（至少 4 位）：`);
+  if (!pass) return;
+  try {
+    await api(`/api/admin/users/${encodeURIComponent(name)}/passwd`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: pass }),
+    });
+    alert("已重置");
+  } catch (e) { alert("重置失败：" + e.message); }
+}
+async function delUser(name) {
+  if (!confirm(`删除用户 ${name}？（其练习记录保留）`)) return;
+  try {
+    await api(`/api/admin/users/${encodeURIComponent(name)}`, { method: "DELETE" });
+    loadUsers();
+  } catch (e) { alert("删除失败：" + e.message); }
+}
+window.resetUserPass = resetUserPass;
+window.delUser = delUser;
 
 $("set-scan-btn").onclick = async () => {
   const btn = $("set-scan-btn");
@@ -1081,15 +1185,51 @@ async function loadStats() {
     `<div class="card"><div class="num">${v}</div><div class="muted">${k}</div></div>`).join("");
 }
 
+// ---------- 登录 / 登出 ----------
+async function tryLogin() {
+  const btn = $("login-btn");
+  btn.disabled = true; btn.textContent = "登录中…";
+  try {
+    await api("/api/auth/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: $("login-username").value.trim(),
+        password: $("login-password").value }),
+    });
+    location.reload(); // 干净地重新初始化全部状态
+  } catch (e) {
+    $("login-error").textContent = e.message;
+    btn.disabled = false; btn.textContent = "登 录";
+  }
+}
+$("login-btn").onclick = tryLogin;
+$("login-password").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.isComposing) tryLogin();
+});
+$("logout-btn").onclick = async () => {
+  try { await api("/api/auth/logout", { method: "POST" }); } catch {}
+  location.reload();
+};
+
 // ---------- 启动 ----------
-initEditor();
-setEditorCode(TEMPLATES.python, "python");
-refreshBadge();
-loadProblems().then(loadHeroStats);
-loadTags();
-loadLearnTags();
-setQuizMode("learn");
-refreshLearnProgress();
+async function boot() {
+  try {
+    currentUser = await api("/api/me");
+  } catch (e) {
+    currentUser = undefined; // 未登录（仅多用户模式会走到这）
+    showLogin();
+    return;
+  }
+  applyUserUI();
+  initEditor();
+  setEditorCode(TEMPLATES.python, "python");
+  refreshBadge();
+  loadProblems().then(loadHeroStats);
+  loadTags();
+  loadLearnTags();
+  setQuizMode("learn");
+  refreshLearnProgress();
+}
+boot();
 
 // inline onclick 导出
 window.delSource = delSource;

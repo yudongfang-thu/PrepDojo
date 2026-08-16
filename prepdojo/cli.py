@@ -102,12 +102,62 @@ def cmd_serve(cfg: Config, args: argparse.Namespace) -> None:
     if db.stats()["problems"] == 0:
         n = load_seed_dir(db, SEEDS_DIR / "coding")
         print(f"[首次启动] 已自动导入 {n} 道种子代码题")
-    app = create_app(cfg, db)
+    multiuser = args.multiuser or cfg.multiuser
+    if multiuser:
+        users = db.list_users()
+        if not users:
+            print("[多用户模式] 库中还没有任何用户：请先执行 "
+                  "`.venv/bin/python -m prepdojo.cli user add <名字> --admin` 创建管理员。")
+    app = create_app(cfg, db, multiuser=multiuser)
     if not cfg.llm_ready:
         print("[提示] 未配置 LLM API key：判题/学习可用，AI 点评/讲解/八股打分不可用。"
               "配置方法见 data/config.yaml 或 README。")
-    print(f"\n  PrepDojo 已启动: http://localhost:{args.port}\n")
+    mode = "多用户（需登录）" if multiuser else "单机模式"
+    print(f"\n  PrepDojo 已启动: http://localhost:{args.port}  [{mode}]\n")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+
+
+def _read_password() -> str:
+    """密码来源：环境变量 PREPDOJO_USER_PASSWORD（非交互）> 终端两次输入。"""
+    import getpass
+    import os
+
+    env = os.environ.get("PREPDOJO_USER_PASSWORD")
+    if env:
+        return env
+    while True:
+        a = getpass.getpass("设置密码: ")
+        if len(a) < 4:
+            print("密码至少 4 位，请重试。")
+            continue
+        b = getpass.getpass("再输入一次: ")
+        if a != b:
+            print("两次不一致，请重试。")
+            continue
+        return a
+
+
+def cmd_user(cfg: Config, args: argparse.Namespace) -> None:
+    db = _db(cfg)
+    action = args.action
+    if action == "add":
+        if not db.create_user(args.name, _read_password(), bool(args.admin)):
+            sys.exit("创建失败：用户名已存在或非法（勿含空格/引号/斜杠）")
+        print(f"已创建用户 {args.name}" + ("（管理员）" if args.admin else ""))
+    elif action == "list":
+        for u in db.list_users():
+            role = "管理员" if u["is_admin"] else "成员"
+            print(f"{u['username']:<16} {role}  今日AI调用 {db.llm_usage_today(u['username'])} 次")
+    elif action == "passwd":
+        if not db.set_user_password(args.name, _read_password()):
+            sys.exit(f"用户不存在: {args.name}")
+        print(f"已重置 {args.name} 的密码")
+    elif action == "del":
+        if not db.delete_user(args.name):
+            sys.exit(f"用户不存在: {args.name}")
+        print(f"已删除用户 {args.name}（其练习记录保留）")
+    else:
+        sys.exit(f"未知操作: {action}")
 
 
 def cmd_stats(cfg: Config, args: argparse.Namespace) -> None:
@@ -138,13 +188,27 @@ def main(argv: list[str] | None = None) -> int:
     p_serve = sub.add_parser("serve", help="启动本地 Web UI")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8686)
+    p_serve.add_argument("--multiuser", action="store_true",
+                         help="启用多用户登录（也可在 config.yaml 设 multiuser: true）")
 
     sub.add_parser("stats", help="查看统计")
 
+    p_user = sub.add_parser("user", help="用户管理（多用户模式）")
+    u_sub = p_user.add_subparsers(dest="action", required=True)
+    u_add = u_sub.add_parser("add", help="创建用户")
+    u_add.add_argument("name")
+    u_add.add_argument("--admin", action="store_true", help="设为管理员")
+    u_sub.add_parser("list", help="列出用户")
+    u_pw = u_sub.add_parser("passwd", help="重置密码")
+    u_pw.add_argument("name")
+    u_del = u_sub.add_parser("del", help="删除用户")
+    u_del.add_argument("name")
+
     args = parser.parse_args(argv)
     cfg = load_config()
-    {"seed": cmd_seed, "ingest": cmd_ingest, "quiz": cmd_quiz,
-     "serve": cmd_serve, "stats": cmd_stats}[args.command](cfg, args)
+    handlers = {"seed": cmd_seed, "ingest": cmd_ingest, "quiz": cmd_quiz,
+                "serve": cmd_serve, "stats": cmd_stats, "user": cmd_user}
+    handlers[args.command](cfg, args)
     return 0
 
 
