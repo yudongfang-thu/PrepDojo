@@ -144,8 +144,9 @@ async function openProblem(pid) {
     currentProblem.tags.map(t => `<span class="badge tag">${esc(t)}</span>`).join("");
   let st = currentProblem.statement;
   if (currentProblem.samples && currentProblem.samples.length) {
-    st += "\n\n【样例】\n" + currentProblem.samples.map(s =>
-      `输入：\n${s.input}输出：\n${s.output}`).join("\n\n");
+    st += "\n\n【样例】（输入第一行各数值的含义，见上方『输入格式』说明）\n" +
+      currentProblem.samples.map(s =>
+        `输入：\n${s.input}\n输出：\n${s.output}`).join("\n\n");
   }
   st += `\n\n（共 ${currentProblem.n_cases} 组测试用例；时限 ${currentProblem.time_limit_ms}ms）`;
   $("statement").textContent = st;
@@ -164,8 +165,9 @@ $("back-btn").onclick = () => {
 };
 $("lang-select").onchange = () => {
   const lang = $("lang-select").value;
-  if (!getEditorCode().trim() || getEditorCode() === TEMPLATES.python.trim() ||
-      getEditorCode() === TEMPLATES.cpp.trim())
+  const cur = getEditorCode().trim();
+  // 仅当编辑器为空或仍是未修改的模板时才切换模板，避免覆盖用户代码
+  if (!cur || cur === TEMPLATES.python.trim() || cur === TEMPLATES.cpp.trim())
     setEditorCode(TEMPLATES[lang], lang);
 };
 
