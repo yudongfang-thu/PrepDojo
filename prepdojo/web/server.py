@@ -62,6 +62,15 @@ def _llm(cfg: Config) -> Optional[LLMClient]:
 def create_app(cfg: Config, db: DB) -> FastAPI:
     app = FastAPI(title="PrepDojo", docs_url=None, redoc_url=None)
 
+    @app.middleware("http")
+    async def no_cache_static(request, call_next):
+        """HTML/JS/CSS 每次必须 revalidate，杜绝浏览器拿旧版前端。"""
+        resp = await call_next(request)
+        ct = resp.headers.get("content-type", "")
+        if any(t in ct for t in ("text/html", "javascript", "text/css")):
+            resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return resp
+
     @app.get("/api/health")
     def health():
         return {"ok": True, "llm_ready": cfg.llm_ready,

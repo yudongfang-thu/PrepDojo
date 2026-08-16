@@ -144,7 +144,7 @@ async function openProblem(pid) {
     currentProblem.tags.map(t => `<span class="badge tag">${esc(t)}</span>`).join("");
   let st = currentProblem.statement;
   if (currentProblem.samples && currentProblem.samples.length) {
-    st += "\n\n【样例】（输入第一行各数值的含义，见上方『输入格式』说明）\n" +
+    st += "\n\n【样例】\n" +
       currentProblem.samples.map(s =>
         `输入：\n${s.input}\n输出：\n${s.output}`).join("\n\n");
   }
