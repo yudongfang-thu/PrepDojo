@@ -366,11 +366,7 @@ function appendThinking(box, text) {
   tc.scrollTop = tc.scrollHeight;
 }
 
-$("ask-coach-btn").onclick = () => {
-  const p = $("coach-panel");
-  p.classList.toggle("hidden");
-  if (!p.classList.contains("hidden")) $("coach-input").focus();
-};
+// 教练面板已常驻在右侧列
 
 async function coachSend() {
   const input = $("coach-input");

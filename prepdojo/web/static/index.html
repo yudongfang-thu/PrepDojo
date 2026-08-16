@@ -35,6 +35,20 @@ main { padding:20px; max-width:1280px; margin:0 auto; }
 .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px 18px; }
 .grid2 { display:grid; grid-template-columns: minmax(340px, 2fr) minmax(420px, 3fr); gap:16px; }
 @media (max-width: 980px) { .grid2 { grid-template-columns: 1fr; } }
+
+/* 题目详情三列布局：题面 | 编辑器+结果 | AI 教练 */
+.detail-grid { display:grid; grid-template-columns: minmax(240px, 1fr) minmax(380px, 1.45fr) minmax(290px, 1fr); gap:16px; align-items:start; }
+@media (max-width: 1180px) {
+  .detail-grid { grid-template-columns: 1fr 1fr; }
+  .col-stmt { grid-column: 1 / -1; max-height:none !important; position:static !important; }
+}
+@media (max-width: 760px) { .detail-grid { grid-template-columns: 1fr; } }
+.col-stmt { max-height: calc(100vh - 110px); overflow:auto; position:sticky; top:66px; padding-right:4px; }
+.col-editor #editor-holder .CodeMirror { height: 62vh; border-radius:8px; border:1px solid var(--border); }
+.col-editor #fallback-editor { height: 62vh; }
+.col-editor #result-area { max-height: 34vh; overflow:auto; }
+.col-coach > .card { position:sticky; top:66px; display:flex; flex-direction:column; max-height: calc(100vh - 110px); }
+#coach-messages { flex:1; overflow-y:auto; min-height:220px; margin:10px 0; padding-right:4px; }
 table { border-collapse:collapse; width:100%; font-size:13.5px; }
 th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--border); }
 th { color:var(--muted); font-weight:500; }
@@ -212,8 +226,8 @@ details.thinking .th-content { white-space:pre-wrap; color:var(--muted); font-st
       <p class="muted" style="margin-top:14px">判题对错一律以测试用例为准；AI 只做点评。
         题面与用例均为本仓库自写。接入自己的 LeetCode 题记录见 README（BYO 模式）。</p>
     </div>
-    <div id="problem-detail-view" class="hidden grid2">
-      <div>
+    <div id="problem-detail-view" class="hidden detail-grid">
+      <div class="col-stmt">
         <div style="display:flex;align-items:center;gap:10px">
           <button class="btn" id="back-btn">← 返回</button>
           <h2 class="sec" id="pd-title" style="margin:0"></h2>
@@ -221,25 +235,26 @@ details.thinking .th-content { white-space:pre-wrap; color:var(--muted); font-st
         <div id="pd-badges" style="margin:8px 0"></div>
         <div class="card"><div id="statement"></div></div>
       </div>
-      <div>
+      <div class="col-editor">
         <div class="toolbar" style="align-items:stretch">
-          <div style="flex:1;display:flex;gap:10px;align-items:center">
+          <div style="flex:1;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
             <select id="lang-select"><option value="python">Python 3</option><option value="cpp">C++ 17</option></select>
-            <button class="btn primary" id="submit-btn">提交判题</button>
+            <button class="btn primary" id="submit-btn">提交判题 (⌘↵)</button>
             <button class="btn" id="ai-judge-btn">🤖 AI 判题</button>
-            <button class="btn" id="ask-coach-btn">🧑‍🏫 问 AI 教练</button>
           </div>
         </div>
         <div id="editor-holder"></div>
         <div id="result-area" style="margin-top:14px"></div>
-        <div id="coach-panel" class="card hidden" style="margin-top:14px">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <b>AI 讲题教练</b><span class="muted" style="font-size:12px">可自主运行判题沙箱验证代码</span>
+      </div>
+      <div class="col-coach">
+        <div id="coach-panel" class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;border-bottom:1px solid var(--border)">
+            <b>🧑‍🏫 AI 教练</b><span class="muted" style="font-size:11px">可自主跑沙箱验证</span>
           </div>
-          <div id="coach-messages" style="max-height:360px;overflow:auto;margin:10px 0"></div>
-          <div class="toolbar" style="margin:0">
-            <input id="coach-input" placeholder="例：我这题哪里会超时？/ 用样例讲讲思路 / 帮我构造一个能暴露 bug 的输入"
-              style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px">
+          <div id="coach-messages"></div>
+          <div class="toolbar" style="margin:10px 0 0">
+            <input id="coach-input" placeholder="哪里会超时？/ 讲讲思路 / 构造输入验证我的代码"
+              style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:13.5px">
             <button class="btn primary" id="coach-send-btn">发送</button>
           </div>
         </div>
