@@ -138,6 +138,12 @@ class DB:
         with self._lock:
             self.conn.commit()
 
+    def scalar(self, sql: str, params: tuple | list = ()) -> Any:
+        """锁内取单值；无行时返回 None（调用方给默认值）。"""
+        with self._lock:
+            row = self.conn.execute(sql, params).fetchone()
+            return row[0] if row else None
+
     # ---------- sources / cards ----------
 
     def upsert_source(self, path: str, sha256: str, title: str) -> int:
@@ -268,8 +274,8 @@ class DB:
                      (explanation, card_id))
 
     def learn_progress(self) -> dict[str, Any]:
-        total = int(self.execute("SELECT COUNT(*) FROM cards").fetchone()[0])
-        learned = int(self.execute("SELECT COUNT(*) FROM cards WHERE learned=1").fetchone()[0])
+        total = int(self.scalar("SELECT COUNT(*) FROM cards") or 0)
+        learned = int(self.scalar("SELECT COUNT(*) FROM cards WHERE learned=1") or 0)
         # 按标签的学习进度
         rows = self.execute("SELECT topic_tags, learned FROM cards").fetchall()
         tag_stat: dict[str, list[int]] = {}
