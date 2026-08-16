@@ -87,14 +87,15 @@ def ingest_dir(
     """on_event(kind, data)：file_start / file_skip / file_done / file_failed /
     card_done / delta（AI thinking 与输出增量）。"""
     root = Path(root).expanduser().resolve()
-    if not root.is_dir():
-        raise NotADirectoryError(f"目录不存在: {root}")
+    if not root.exists():
+        raise NotADirectoryError(f"路径不存在: {root}")
 
     def emit(kind: str, **data) -> None:
         if on_event:
             on_event(kind, data)
 
-    files = iter_source_files(root)
+    # 支持单文件或目录
+    files = [root] if root.is_file() else iter_source_files(root)
     if limit_files:
         files = files[:limit_files]
 
@@ -102,7 +103,7 @@ def ingest_dir(
              "files_done": 0, "blocks_found": 0, "cards_added": 0, "cards_failed": 0}
 
     for fp in files:
-        rel = str(fp.relative_to(root))
+        rel = fp.name if root.is_file() else str(fp.relative_to(root))
         try:
             sha = file_sha256(fp)
             if db.source_sha(str(fp)) == sha:
