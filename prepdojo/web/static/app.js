@@ -23,12 +23,52 @@ function initEditor() {
     cm = CodeMirror(holder, {
       value: "", mode: "python", theme: "material-darker",
       lineNumbers: true, indentUnit: 4, tabSize: 4,
+      extraKeys: {
+        // Tab：多行选中→整块缩进；行首→缩进；代码中间→插入 4 空格
+        "Tab": cmr => {
+          if (cmr.somethingSelected() && cmr.getSelection().includes("\n")) {
+            cmr.indentSelection("add");
+          } else if (!cmr.somethingSelected() &&
+                     /^\s*$/.test(cmr.getLine(cmr.getCursor().line).slice(0, cmr.getCursor().ch))) {
+            cmr.execCommand("indentMore");
+          } else {
+            cmr.replaceSelection("    ");
+          }
+        },
+        "Shift-Tab": cmr => cmr.indentSelection("subtract"),
+        // Cmd/Ctrl+Enter：提交判题
+        "Cmd-Enter": () => $("submit-btn").click(),
+        "Ctrl-Enter": () => $("submit-btn").click(),
+      },
     });
+    cm.on("keydown", (_, e) => { if (e.key === "Tab") e.preventDefault(); });
     fallbackTA = null;
   } else {
     fallbackTA = document.createElement("textarea");
     fallbackTA.id = "fallback-editor";
     fallbackTA.spellcheck = false;
+    // 降级 textarea：Tab 插入 4 空格 / Shift+Tab 反缩进，不让焦点跳出
+    fallbackTA.addEventListener("keydown", e => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const ta = e.target, s = ta.selectionStart, en = ta.selectionEnd;
+        if (e.shiftKey) {
+          const lineStart = ta.value.lastIndexOf("\n", s - 1) + 1;
+          const m = /^ {1,4}/.exec(ta.value.slice(lineStart));
+          if (m && s === en && s >= lineStart && s <= lineStart + m[0].length) {
+            ta.value = ta.value.slice(0, lineStart) + ta.value.slice(lineStart + m[0].length);
+            ta.selectionStart = ta.selectionEnd = s - m[0].length;
+          }
+        } else if (s !== en && ta.value.slice(s, en).includes("\n")) {
+          const ls = ta.value.lastIndexOf("\n", s - 1) + 1;
+          const block = ta.value.slice(ls, en);
+          ta.value = ta.value.slice(0, ls) + block.replace(/^/gm, "    ") + ta.value.slice(en);
+          ta.selectionStart = ls; ta.selectionEnd = en + 4 * (block.split("\n").length);
+        } else {
+          ta.setRangeText("    ", s, en, "end");
+        }
+      }
+    });
     holder.appendChild(fallbackTA);
     cm = null;
   }
