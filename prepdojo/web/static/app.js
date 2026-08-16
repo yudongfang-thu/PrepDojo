@@ -294,8 +294,12 @@ $("ai-judge-btn").onclick = async () => {
           if (!live._think) live._think = makeThinkingBox(live);
           appendThinking(live._think, ev.text);
         } else if (ev.event === "content_delta") {
-          live.insertAdjacentHTML("beforeend",
-            `<div class="coach-msg tool">${esc(ev.text)}</div>`);
+          // 最终输出是结构化 JSON 报告：不逐 token 展示原文，等 report 事件统一渲染
+          if (!live._reporting) {
+            live._reporting = true;
+            live.insertAdjacentHTML("beforeend",
+              '<div class="coach-msg tool">📝 正在汇总判定报告…</div>');
+          }
         } else if (ev.event === "report") {
           if (live._think) live._think.open = false;
           renderAiJudgeReport(live, ev.report);
