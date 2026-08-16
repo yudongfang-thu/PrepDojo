@@ -655,6 +655,14 @@ def create_app(cfg: Config, db: DB) -> FastAPI:
                         q.put(("report", {"report": report}))
                     else:
                         q.put(("report_raw", {"text": result.reply}))
+                    # AI 判题也留档：代码 + AI 读到的沙箱判定 + 报告
+                    verdict = (report or {}).get("sandbox_verdict", "NA")
+                    db.record_submission(
+                        pid, language, code, verdict,
+                        {"source": "ai_judge",
+                         "tool_trace": [t.summary for t in result.tool_trace],
+                         "report": report},
+                        0)
                 except Exception as e:
                     q.put(("error", {"message": str(e)}))
                 finally:
