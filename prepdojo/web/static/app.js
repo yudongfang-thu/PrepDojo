@@ -191,7 +191,10 @@ async function openProblem(pid) {
   st += `\n\n（共 ${currentProblem.n_cases} 组测试用例；时限 ${currentProblem.time_limit_ms}ms）`;
   $("statement").textContent = st;
   const lang = $("lang-select").value;
-  setEditorCode(TEMPLATES[lang], lang);
+  // 草稿优先：用户上次写到一半的代码不丢
+  const draft = localStorage.getItem("prepdojo-draft-" + currentProblem.id + "-" + lang);
+  setEditorCode(draft && draft.trim() ? draft : TEMPLATES[lang], lang);
+  saveDraft();
   $("result-area").innerHTML = "";
   lastSubmission = null;
   coachHistory = [];
@@ -203,13 +206,29 @@ $("back-btn").onclick = () => {
   $("problem-detail-view").classList.add("hidden");
   $("problem-list-view").classList.remove("hidden");
 };
+function saveDraft() {
+  if (!currentProblem) return;
+  const key = "prepdojo-draft-" + currentProblem.id + "-" + $("lang-select").value;
+  const code = getEditorCode();
+  // 空或未改动的模板不存，避免草稿盖住未来的模板切换
+  if (!code.trim() || code.trim() === TEMPLATES.python.trim() || code.trim() === TEMPLATES.cpp.trim())
+    localStorage.removeItem(key);
+  else localStorage.setItem(key, code);
+}
 $("lang-select").onchange = () => {
   const lang = $("lang-select").value;
   const cur = getEditorCode().trim();
-  // 仅当编辑器为空或仍是未修改的模板时才切换模板，避免覆盖用户代码
   if (!cur || cur === TEMPLATES.python.trim() || cur === TEMPLATES.cpp.trim())
     setEditorCode(TEMPLATES[lang], lang);
+  else if (currentProblem) {
+    // 已有代码：切换语言时尝试恢复该语言的草稿，无草稿则给模板
+    const draft = localStorage.getItem("prepdojo-draft-" + currentProblem.id + "-" + lang);
+    if (draft && draft.trim()) setEditorCode(draft, lang);
+  }
 };
+// 输入防抖存草稿
+let _draftTimer = null;
+setInterval(() => { if (_draftTimer === null) _draftTimer = setTimeout(() => { saveDraft(); _draftTimer = null; }, 1500); }, 2000);
 
 $("submit-btn").onclick = async () => {
   const code = getEditorCode();

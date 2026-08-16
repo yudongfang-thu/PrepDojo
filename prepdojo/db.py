@@ -87,6 +87,16 @@ CREATE INDEX IF NOT EXISTS idx_cards_tags ON cards(topic_tags);
 CREATE INDEX IF NOT EXISTS idx_cases_problem ON test_cases(problem_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_problem ON submissions(problem_id);
 CREATE INDEX IF NOT EXISTS idx_attempts_card ON quiz_attempts(card_id);
+
+CREATE TABLE IF NOT EXISTS ai_judgements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  problem_id TEXT NOT NULL,
+  language TEXT NOT NULL,
+  code TEXT NOT NULL,
+  verdict TEXT,
+  detail TEXT,
+  created_at TEXT NOT NULL
+);
 """
 
 
@@ -393,6 +403,18 @@ class DB:
             ],
             "n_cases": len(cases),
         }
+
+    def record_ai_judgement(
+        self, problem_id: str, language: str, code: str,
+        verdict: str, detail: dict,
+    ) -> int:
+        cur = self.execute(
+            "INSERT INTO ai_judgements(problem_id, language, code, verdict, detail, created_at) "
+            "VALUES(?,?,?,?,?,?)",
+            (problem_id, language, code, verdict,
+             json.dumps(detail, ensure_ascii=False), _now()),
+        )
+        return int(cur.lastrowid)
 
     # ---------- submissions ----------
 
