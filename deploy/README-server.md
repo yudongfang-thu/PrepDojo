@@ -60,8 +60,9 @@ chmod +x deploy/serve.sh && ./deploy/serve.sh start
 .venv/bin/python -m prepdojo.cli user passwd 名字 # 重置密码
 ```
 
-- **每日备份**（crontab -e）：
-  `0 4 * * * sqlite3 /mnt/dataY/ydf/projects/PrepDojo/data/prepdojo.db ".backup /mnt/dataY/ydf/projects/PrepDojo/data/backup-$(date +\%F).db"`
+- **每日备份**（crontab -e，一行即可，日期逻辑在脚本里）：
+  `0 4 * * * /mnt/dataY/ydf/projects/PrepDojo/deploy/backup.sh >> /mnt/dataY/ydf/projects/PrepDojo/data/backup.log 2>&1`
+  备份落在 `data/backups/`，自动保留最近 14 份。
 - **升级代码**：开发机 rsync 后 `./deploy/serve.sh restart`（数据库 schema 自动迁移，
   单用户旧数据会归属到 `local` 用户，不影响新用户）。
 - **镜像升级**（改 Dockerfile 后）：重新 build，然后 restart 服务。
