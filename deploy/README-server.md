@@ -15,15 +15,11 @@
 ## 首次部署
 
 ```bash
-# 1) 同步代码（从开发机；分支不上 GitHub 公开仓库）
-rsync -az --delete \
-  --exclude .venv --exclude data --exclude __pycache__ --exclude .pytest_cache \
-  --exclude .git --exclude legacy --exclude tmp \
-  ./ ladd90:/mnt/dataY/ydf/projects/PrepDojo/
+# 1) 服务器上获取代码（公开仓库直接 clone）
+git clone https://github.com/yudongfang-thu/PrepDojo.git
+cd PrepDojo
 
-# 2) 服务器上装依赖（Python 3.10+）
-ssh ladd90
-cd /mnt/dataY/ydf/projects/PrepDojo
+# 2) 装依赖（Python 3.10+）
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 # 3) 构建判题沙箱镜像（一次性；判题与 AI 出题的沙箱验证都在里面跑）
