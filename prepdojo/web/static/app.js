@@ -183,6 +183,10 @@ function showPage(name) {
   if (name === "home") loadHeroStats();
   if (name === "kb") loadSources();
   if (name === "settings") loadSettings();
+  if (name === "coding" && cm) {
+    // 编辑器在 hidden 容器中初始化会导致行号槽度量错误（行号与代码重叠），可见后必须 refresh
+    setTimeout(() => cm.refresh(), 0);
+  }
 }
 pages.forEach(p => $("nav-" + p).onclick = () => showPage(p));
 
@@ -260,6 +264,7 @@ $("wrong-drill-btn").onclick = async () => {
 
 async function openProblem(pid) {
   currentProblem = await api("/api/problems/" + pid);
+  if (cm) setTimeout(() => cm.refresh(), 0);
   $("problem-list-view").classList.add("hidden");
   $("problem-detail-view").classList.remove("hidden");
   $("pd-title").textContent = `${currentProblem.id} · ${currentProblem.title}`;
