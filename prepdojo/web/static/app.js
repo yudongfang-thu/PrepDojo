@@ -262,8 +262,8 @@ async function openProblem(pid) {
   $("result-area").innerHTML = "";
   lastSubmission = null;
   coachHistory = [];
-  const cm = $("coach-messages");
-  if (cm) cm.innerHTML = "";
+  const coachMsgs = $("coach-messages");
+  if (coachMsgs) coachMsgs.innerHTML = "";
 }
 
 $("back-btn").onclick = () => {
