@@ -171,12 +171,19 @@ details.thinking .th-content { white-space:pre-wrap; color:var(--muted); font-st
   <section id="page-login" class="hidden">
     <div class="card" style="max-width:380px;margin:10vh auto 0;text-align:center">
       <h2 class="sec" style="text-align:center">PrepDojo · 实验室内测</h2>
-      <p class="muted" style="font-size:13px;margin:6px 0 16px">账号由管理员创建，练习进度按人隔离</p>
-      <input id="login-username" placeholder="用户名" autocomplete="username"
+      <p class="muted" style="font-size:13px;margin:6px 0 12px">练习进度按人隔离 · 可自助注册</p>
+      <div style="display:flex;gap:4px;margin-bottom:12px">
+        <button class="btn primary" id="auth-tab-login" style="flex:1;padding:7px">登 录</button>
+        <button class="btn" id="auth-tab-register" style="flex:1;padding:7px">注 册</button>
+      </div>
+      <input id="login-username" placeholder="用户名（2-20 字符）" autocomplete="username"
         style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:9px 12px;font-size:14px;margin-bottom:10px">
       <input id="login-password" type="password" placeholder="密码" autocomplete="current-password"
-        style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:9px 12px;font-size:14px;margin-bottom:12px">
+        style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:9px 12px;font-size:14px;margin-bottom:10px">
+      <input id="reg-code" type="password" placeholder="邀请码（向管理员索取）" class="hidden"
+        style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:9px 12px;font-size:14px;margin-bottom:10px">
       <button class="btn primary" id="login-btn" style="width:100%">登 录</button>
+      <button class="btn primary hidden" id="register-btn" style="width:100%">注册并登录</button>
       <p id="login-error" class="verdict-RE" style="font-size:13px;min-height:18px;margin:10px 0 0"></p>
     </div>
   </section>

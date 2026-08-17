@@ -107,6 +107,40 @@ def create_app(cfg: Config, db: DB, multiuser: bool = False) -> FastAPI:
                         max_age=SESSION_DAYS * 86400, path="/")
         return resp
 
+    @app.get("/api/auth/registration_mode")
+    def registration_mode():
+        """前端据此渲染注册表单（无需登录）。"""
+        if not multiuser:
+            return {"mode": "off", "multiuser": False}
+        return {"mode": cfg.registration if cfg.registration in ("off", "code", "open") else "off",
+                "multiuser": True}
+
+    @app.post("/api/auth/register")
+    def register(body: dict):
+        """自助注册（按 registration 模式校验），成功即自动登录。"""
+        if not multiuser:
+            raise HTTPException(400, "单机模式无需注册")
+        mode = cfg.registration if cfg.registration in ("off", "code", "open") else "off"
+        if mode == "off":
+            raise HTTPException(403, "当前未开放自助注册，请联系管理员创建账号")
+        if mode == "code":
+            code = (body.get("code") or "").strip()
+            if not cfg.registration_code or code != cfg.registration_code:
+                raise HTTPException(403, "邀请码错误，请向管理员索取")
+        username = (body.get("username") or "").strip()
+        password = body.get("password") or ""
+        if len(username) < 2 or len(username) > 20:
+            raise HTTPException(400, "用户名长度需在 2-20 字符之间")
+        if len(password) < 6:
+            raise HTTPException(400, "密码至少 6 位")
+        if not db.create_user(username, password, is_admin=False):
+            raise HTTPException(409, "用户名已存在或非法（不能包含空格和 \/'\" 字符）")
+        token = db.create_session(username, SESSION_DAYS)
+        resp = JSONResponse({"ok": True, "username": username, "is_admin": False})
+        resp.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax",
+                        max_age=SESSION_DAYS * 86400, path="/")
+        return resp
+
     @app.post("/api/auth/logout")
     def logout(request: Request):
         token = request.cookies.get(SESSION_COOKIE)

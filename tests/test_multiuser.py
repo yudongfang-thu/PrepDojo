@@ -266,3 +266,63 @@ def test_migrate_old_singleuser_db(tmp_path):
     assert db.create_user("root", "pass1234", True)
     assert db.verify_login("root", "pass1234")["is_admin"] is True
     assert db.verify_login("root", "bad") is None
+
+
+def _reg_client(tmp_path, registration="code", code="LAB2026"):
+    """构造指定注册模式的登录客户端。"""
+    import importlib
+
+    import prepdojo.config as cfgmod
+    importlib.reload(cfgmod)
+    from prepdojo.db import DB as DB2
+    from prepdojo.web.server import create_app as _create
+
+    db = DB2(tmp_path / "reg.db")
+    db.create_user("admin", "adminpass", is_admin=True)
+    cfg = cfgmod.Config(api_key="", db_path=tmp_path / "reg.db")
+    cfg.multiuser = True
+    cfg.registration = registration
+    cfg.registration_code = code
+    return TestClient(_create(cfg, db, multiuser=True))
+
+
+def test_registration_mode_endpoint(tmp_path):
+    c = _reg_client(tmp_path, registration="code")
+    d = c.get("/api/auth/registration_mode").json()
+    assert d == {"mode": "code", "multiuser": True}
+
+
+def test_register_with_code(tmp_path):
+    c = _reg_client(tmp_path, registration="code", code="LAB2026")
+    # 错误邀请码
+    r = c.post("/api/auth/register",
+               json={"username": "alice", "password": "123456", "code": "WRONG"})
+    assert r.status_code == 403
+    # 正确邀请码 → 自动登录（cookie 生效）
+    r2 = c.post("/api/auth/register",
+                json={"username": "alice", "password": "123456", "code": "LAB2026"})
+    assert r2.status_code == 200 and r2.json()["is_admin"] is False
+    me = c.get("/api/me")
+    assert me.status_code == 200 and me.json()["username"] == "alice"
+
+
+def test_register_open_and_off(tmp_path):
+    c = _reg_client(tmp_path, registration="open")
+    assert c.post("/api/auth/register",
+                  json={"username": "bob", "password": "123456"}).status_code == 200
+    c2 = _reg_client(tmp_path, registration="off")
+    assert c2.post("/api/auth/register",
+                   json={"username": "carol", "password": "123456"}).status_code == 403
+
+
+def test_register_validation(tmp_path):
+    c = _reg_client(tmp_path, registration="open")
+    # 用户名过短 / 密码过短 / 重复注册
+    assert c.post("/api/auth/register",
+                  json={"username": "a", "password": "123456"}).status_code == 400
+    assert c.post("/api/auth/register",
+                  json={"username": "dave", "password": "123"}).status_code == 400
+    assert c.post("/api/auth/register",
+                  json={"username": "dave", "password": "123456"}).status_code == 200
+    assert c.post("/api/auth/register",
+                  json={"username": "dave", "password": "123456"}).status_code == 409

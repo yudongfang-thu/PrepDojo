@@ -1202,6 +1202,52 @@ async function tryLogin() {
   }
 }
 $("login-btn").onclick = tryLogin;
+
+// ---------- 注册 ----------
+let authMode = "login";
+function setAuthTab(mode) {
+  authMode = mode;
+  $("auth-tab-login").className = "btn" + (mode === "login" ? " primary" : "");
+  $("auth-tab-register").className = "btn" + (mode === "register" ? " primary" : "");
+  $("login-btn").classList.toggle("hidden", mode !== "login");
+  $("register-btn").classList.toggle("hidden", mode !== "register");
+  $("login-error").textContent = "";
+}
+$("auth-tab-login").onclick = () => setAuthTab("login");
+$("auth-tab-register").onclick = () => setAuthTab("register");
+
+async function initRegistrationMode() {
+  try {
+    const d = await api("/api/auth/registration_mode");
+    if (d.mode === "off") {
+      $("auth-tab-register").disabled = true;
+      $("auth-tab-register").title = "未开放自助注册";
+    } else if (d.mode === "code") {
+      $("reg-code").classList.remove("hidden");
+    } // open：不显示邀请码框
+  } catch {}
+}
+initRegistrationMode();
+
+$("register-btn").onclick = async () => {
+  const btn = $("register-btn");
+  btn.disabled = true; btn.textContent = "注册中…";
+  try {
+    const body = { username: $("login-username").value.trim(),
+                   password: $("login-password").value };
+    if (!$("reg-code").classList.contains("hidden"))
+      body.code = $("reg-code").value.trim();
+    const r = await api("/api/auth/register", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (r.ok) location.reload();
+  } catch (e) {
+    $("login-error").textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = "注册并登录";
+  }
+};
 $("login-password").addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.isComposing) tryLogin();
 });
