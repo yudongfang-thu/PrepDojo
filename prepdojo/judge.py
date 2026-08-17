@@ -132,12 +132,24 @@ def _classify(returncode: int, stderr: str, timed_out: bool) -> Optional[str]:
 CPP_EXTRA_INCLUDE = str(Path(__file__).resolve().parent / "cpp_include")
 
 
+def resolve_compiler(preferred: str) -> Optional[str]:
+    """按 配置 → g++ → clang++ → c++ 顺序取第一个可用编译器（macOS 只有 clang++，Linux/容器常是 g++）。"""
+    import shutil as _sh
+    for cand in (preferred, "g++", "clang++", "c++"):
+        if cand and _sh.which(cand):
+            return cand
+    return None
+
+
 def compile_cpp(code: str, workdir: Path, compiler: str = "clang++") -> tuple[Optional[str], str]:
+    resolved = resolve_compiler(compiler)
+    if not resolved:
+        return None, "未找到可用的 C++ 编译器（g++/clang++ 均不在环境中）"
     src = workdir / "main.cpp"
     src.write_text(code, encoding="utf-8")
     binary = workdir / "main_bin"
     out, err, rc, _, _ = _run_once(
-        [compiler, "-std=c++17", "-O2", "-I", CPP_EXTRA_INCLUDE,
+        [resolved, "-std=c++17", "-O2", "-I", CPP_EXTRA_INCLUDE,
          "-o", str(binary), str(src)],
         stdin_text="", wall_timeout_s=30, mem_limit_mb=1024, cwd=str(workdir),
     )
