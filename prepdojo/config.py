@@ -29,6 +29,12 @@ DEFAULTS = {
     "judge_time_limit_ms": 5000,
     "judge_mem_limit_mb": 512,
     "cpp_compiler": "clang++",
+    # ===== server-beta：多用户部署 =====
+    "multiuser": False,            # True 时启用登录鉴权
+    "registration": "code",        # 注册模式：off=仅管理员建号 / code=邀请码自助注册 / open=完全开放
+    "registration_code": "",       # registration=code 时的邀请码
+    "judge_docker_image": "",      # 非空时判题在 Docker 沙箱执行（如 prepdojo-judge:latest）
+    "daily_limit_per_user": 0,     # 每用户每日 AI 调用上限，0 = 不限
 }
 
 
@@ -49,6 +55,11 @@ class Config:
     judge_time_limit_ms: int = DEFAULTS["judge_time_limit_ms"]
     judge_mem_limit_mb: int = DEFAULTS["judge_mem_limit_mb"]
     cpp_compiler: str = DEFAULTS["cpp_compiler"]
+    multiuser: bool = DEFAULTS["multiuser"]
+    registration: str = DEFAULTS["registration"]
+    registration_code: str = DEFAULTS["registration_code"]
+    judge_docker_image: str = DEFAULTS["judge_docker_image"]
+    daily_limit_per_user: int = DEFAULTS["daily_limit_per_user"]
     db_path: Path = field(default_factory=lambda: DATA_DIR / "prepdojo.db")
 
     @property
@@ -62,7 +73,14 @@ def _load_yaml(path: Path) -> dict:
     try:
         with open(path, "r", encoding="utf-8") as f:
             obj = yaml.safe_load(f) or {}
-        return obj.get("llm", obj) if isinstance(obj, dict) else {}
+        if not isinstance(obj, dict):
+            return {}
+        # 顶层键（multiuser / judge_docker_image / ...）与 llm: 段合并，llm 优先
+        llm_sec = obj.pop("llm", None)
+        merged = dict(obj)
+        if isinstance(llm_sec, dict):
+            merged.update(llm_sec)
+        return merged
     except Exception:
         return {}
 
@@ -98,6 +116,10 @@ judge:
   time_limit_ms: 5000
   mem_limit_mb: 512
   cpp_compiler: "clang++"
+# 多用户模式（实验室服务器）：
+# multiuser: true            # 启用登录
+# registration: code         # off=仅管理员建号 / code=邀请码自助注册 / open=完全开放
+# registration_code: "LAB-XXX"  # 自助注册邀请码（registration=code 时）
 """
 
 

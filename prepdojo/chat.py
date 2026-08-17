@@ -119,17 +119,20 @@ class SandboxTools:
 
     def __init__(self, get_problem: Callable[[str], Optional[dict]],
                  load_cases: Callable[[str], list[dict]],
-                 cpp_compiler: str = "clang++"):
+                 cpp_compiler: str = "clang++",
+                 docker_image: str = ""):
         from .judge import judge_submission  # 延迟导入避免环
 
         self._judge = judge_submission
         self._get_problem = get_problem
         self._load_cases = load_cases
         self._cpp_compiler = cpp_compiler
+        self._docker_image = docker_image
 
     def run_code(self, code: str, language: str, stdin: str = "") -> str:
         res = self._judge(code, language, [{"input": stdin, "output": ""}],
-                          cpp_compiler=self._cpp_compiler)
+                          cpp_compiler=self._cpp_compiler,
+                          docker_image=self._docker_image)
         c = res.cases[0] if res.cases else None
         return json.dumps({
             "exit": "ok" if res.verdict in ("AC", "WA") else res.verdict,
@@ -147,7 +150,8 @@ class SandboxTools:
         res = self._judge(code, language, cases,
                           time_limit_ms=p["time_limit_ms"],
                           mem_limit_mb=p["mem_limit_mb"],
-                          cpp_compiler=self._cpp_compiler)
+                          cpp_compiler=self._cpp_compiler,
+                          docker_image=self._docker_image)
         payload = {
             "verdict": res.verdict,
             "max_time_ms": res.max_time_ms,

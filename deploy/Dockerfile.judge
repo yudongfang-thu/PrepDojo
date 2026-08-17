@@ -1,0 +1,9 @@
+# PrepDojo 判题沙箱镜像：python3 + g++（含 bits/stdc++.h），无网络、只读运行
+# 构建：docker build -f deploy/Dockerfile.judge -t prepdojo-judge:latest .
+FROM python:3.12-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# 判题代码只用标准库；不装任何其他依赖，保持镜像最小

@@ -37,7 +37,8 @@ def _slug(title: str) -> str:
     return re.sub(r"[^a-zA-Z0-9]+", "-", title).strip("-")[:20].lower() or "gen"
 
 
-def _run_reference(code: str, inputs: list[str], time_limit_ms: int) -> list[dict]:
+def _run_reference(code: str, inputs: list[str], time_limit_ms: int,
+                   docker_image: str = "") -> list[dict]:
     """逐用例运行参考解（不短路），返回每用例 stdout/stderr/rc/耗时。"""
     import tempfile
     from pathlib import Path
@@ -51,7 +52,7 @@ def _run_reference(code: str, inputs: list[str], time_limit_ms: int) -> list[dic
         results = []
         for s in inputs:
             out, err, rc, ms, timed_out = _run_once(
-                cmd, s, time_limit_ms / 1000, 512)
+                cmd, s, time_limit_ms / 1000, 512, docker_image=docker_image)
             results.append({"stdout": out, "stderr": err, "rc": rc,
                             "ms": ms, "timed_out": timed_out})
         return results
@@ -63,6 +64,7 @@ def generate_problem(
     cpp_compiler: str = "clang++",
     on_event: Optional[Callable[[str, dict], None]] = None,
     fix_rounds: int = 2,
+    docker_image: str = "",
 ) -> dict[str, Any]:
     """brief：用户的题目描述或出题要求。返回入库后的题目信息。
 
@@ -101,7 +103,7 @@ def generate_problem(
         inputs = [s if s.endswith("\n") else s + "\n"
                   for s in obj["test_inputs"]]
         tl = int(obj.get("time_limit_ms", 5000))
-        results = _run_reference(obj["reference_python"], inputs, tl)
+        results = _run_reference(obj["reference_python"], inputs, tl, docker_image)
         bad = [(i, r) for i, r in enumerate(results)
                if r["rc"] != 0 or r["timed_out"]]
         if not bad:  # 全部跑通：期望输出 = 参考解实际输出
