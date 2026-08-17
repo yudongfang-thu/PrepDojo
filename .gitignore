@@ -29,3 +29,4 @@ tmp/judge/
 # ZCode 本地会话产物
 .zcode/
 .zcode/
+.zcode/
