@@ -213,13 +213,28 @@ def _classify(returncode: int, stderr: str, timed_out: bool) -> Optional[str]:
 CPP_EXTRA_INCLUDE = str(Path(__file__).resolve().parent / "cpp_include")
 
 
+def resolve_compiler(preferred: str) -> Optional[str]:
+    """按 配置 → g++ → clang++ → c++ 顺序取第一个宿主可用的编译器。
+
+    判题环境差异大（macOS 只有 clang++，Docker 镜像只有 g++），
+    不应因单个编译器名缺失而全部 CE。Docker 模式下镜像保证 g++。
+    """
+    import shutil as _sh
+
+    for cand in (preferred, "g++", "clang++", "c++"):
+        if cand and _sh.which(cand):
+            return cand
+    return None
+
+
 def compile_cpp(code: str, workdir: Path, compiler: str = "clang++",
                 docker_image: str = "") -> tuple[Optional[str], str]:
+    resolved = resolve_compiler(compiler) or "g++"  # Docker 内由镜像保证 g++
     src = workdir / "main.cpp"
     src.write_text(code, encoding="utf-8")
     binary = workdir / "main_bin"
     out, err, rc, _, _ = _run_once(
-        [compiler, "-std=c++17", "-O2", "-I", CPP_EXTRA_INCLUDE,
+        [resolved, "-std=c++17", "-O2", "-I", CPP_EXTRA_INCLUDE,
          "-o", str(binary), str(src)],
         stdin_text="", wall_timeout_s=30, mem_limit_mb=1024, cwd=str(workdir),
         docker_image=docker_image,
