@@ -16,6 +16,54 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({
 
 // ---------- 编辑器（CodeMirror 优先，降级 textarea） ----------
 let cm = null, fallbackTA = null;
+// ---------- 代码补全：字典（关键字/内建）+ 文档词 ----------
+const PY_WORDS = ("False None True and as assert async await break class continue def del elif else except "
+  + "finally for from global if import in is lambda nonlocal not or pass raise return try while with yield "
+  + "print len range enumerate map filter zip sorted sum min max abs reversed input int str float list dict set "
+  + "tuple bool isinstance type any all divmod round pow ord chr hex bin format join split strip replace startswith "
+  + "endswith append extend pop insert remove sort reverse keys values items get setdefault defaultdict deque heapify "
+  + "heappush heappop bisect_left bisect_right Counter reduce inf").split(" ");
+const CPP_WORDS = ("alignof auto bool break case catch char class const constexpr continue decltype default delete do "
+  + "double else enum explicit extern false float for friend goto if inline int long mutable namespace new noexcept "
+  + "nullptr operator private protected public return short signed sizeof static struct switch template this throw "
+  + "true try typedef typename union unsigned using virtual void volatile while "
+  + "include bits std vector string map set unordered_map unordered_set pair make_pair queue stack priority_queue deque "
+  + "array list sort stable_sort reverse push_back pop_back emplace_back begin end front back size resize empty lower_bound "
+  + "upper_bound binary_search min max abs swap cout cin endl ios sync_with_stdio tie accumulate iota INT_MAX INT_MIN "
+  + "unique_ptr shared_ptr move forward iterator push make_heap pop_heap next_permutation gcd lcm memset substr find").split(" ");
+
+function mergedHint(cmr) {
+  const cur = cmr.getCursor();
+  const line = cmr.getLine(cur.line);
+  const m = /[\w]+$/.exec(line.slice(0, cur.ch));
+  if (!m || m[0].length < 2) return null;
+  const from = { line: cur.line, ch: cur.ch - m[0].length };
+  const prefix = m[0];
+  const dict = $("lang-select").value === "cpp" ? CPP_WORDS : PY_WORDS;
+  const seen = new Set();
+  const list = [];
+  for (const w of dict) {
+    if (w.startsWith(prefix) && !seen.has(w)) {
+      seen.add(w);
+      list.push({ text: w, displayText: w, className: "hint-kw" });
+    }
+  }
+  try {
+    const any = CodeMirror.hint.anyword(cmr);
+    if (any && any.list) {
+      for (const w of any.list) {
+        if (!seen.has(w) && String(w).startsWith(prefix)) {
+          seen.add(w);
+          list.push({ text: w, displayText: String(w) });
+        }
+      }
+    }
+  } catch {}
+  if (!list.length) return null;
+  return { list, from, to: cur };
+}
+
+let _hintTimer = null;
 function initEditor() {
   const holder = $("editor-holder");
   holder.innerHTML = "";
@@ -26,6 +74,8 @@ function initEditor() {
       extraKeys: {
         // Tab：多行选中→整块缩进；行首→缩进；代码中间→插入 4 空格
         "Tab": cmr => {
+          const ca = cmr.state.completionActive;
+          if (ca && ca.data && ca.data.list && ca.data.list.length) { ca.pick(); return; }
           if (cmr.somethingSelected() && cmr.getSelection().includes("\n")) {
             cmr.indentSelection("add");
           } else if (!cmr.somethingSelected() &&
@@ -39,7 +89,16 @@ function initEditor() {
         // Cmd/Ctrl+Enter：提交判题
         "Cmd-Enter": () => $("submit-btn").click(),
         "Ctrl-Enter": () => $("submit-btn").click(),
+        "Ctrl-Space": cmr => cmr.showHint({ hint: mergedHint, completeSingle: false }),
       },
+    });
+    // 输入标识符 ≥2 字符后自动弹出补全（180ms 防抖）
+    cm.on("inputRead", (_, ch) => {
+      if (!/[A-Za-z_]/.test(ch.text && ch.text[0] || "")) return;
+      clearTimeout(_hintTimer);
+      _hintTimer = setTimeout(() => {
+        if (!cm.state.completionActive) cm.showHint({ hint: mergedHint, completeSingle: false });
+      }, 180);
     });
     cm.on("keydown", (_, e) => { if (e.key === "Tab") e.preventDefault(); });
     fallbackTA = null;
