@@ -112,6 +112,23 @@ tests/               # pytest（判题五态 / 抽取 / 持久化 / Web API）
 legacy/              # 前身项目 AI-Literature-Analyzer（保留存档）
 ```
 
+## 多用户模式（实验室 / 团队共享）
+
+单机之外，同一个程序可切换为多用户服务器（登录、进度隔离、Docker 判题沙箱）：
+
+```bash
+# data/config.yaml 中：
+# multiuser: true
+# registration: code            # off=仅管理员建号 / code=邀请码自助注册 / open=开放
+# registration_code: "LAB-XXX"
+# daily_limit_per_user: 200     # 每人每日 AI 调用上限
+# judge_docker_image: prepdojo-judge:latest   # 强烈建议：陌生代码跑在容器里
+.venv/bin/python -m prepdojo.cli serve --host 0.0.0.0 --multiuser
+```
+
+判题沙箱镜像构建：`docker build -f deploy/Dockerfile.judge -t prepdojo-judge:latest deploy/`，
+部署与备份脚本见 `deploy/`（serve.sh / backup.sh，crontab 示例在 README-server.md）。
+
 ## 开发
 
 ```bash
