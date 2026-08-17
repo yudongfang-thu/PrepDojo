@@ -134,7 +134,7 @@ def create_app(cfg: Config, db: DB, multiuser: bool = False) -> FastAPI:
         if len(password) < 6:
             raise HTTPException(400, "密码至少 6 位")
         if not db.create_user(username, password, is_admin=False):
-            raise HTTPException(409, "用户名已存在或非法（不能包含空格和 \/'\" 字符）")
+            raise HTTPException(409, "用户名已存在或非法（不能包含空格、引号或斜杠）")
         token = db.create_session(username, SESSION_DAYS)
         resp = JSONResponse({"ok": True, "username": username, "is_admin": False})
         resp.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax",

@@ -9,12 +9,14 @@ let currentUser = null;
 function showLogin(msg) {
   ["home", "coding", "quiz", "kb", "settings", "stats"].forEach(p =>
     $("page-" + p).classList.add("hidden"));
+  document.querySelector("header nav").style.display = "none"; // 未登录不显示菜单
   $("page-login").classList.remove("hidden");
   $("login-error").textContent = msg || "";
   $("login-username").focus();
 }
 
 function applyUserUI() {
+  document.querySelector("header nav").style.display = "flex"; // 登录后恢复菜单
   const u = currentUser;
   if (!u || !u.multiuser) return; // 单机模式：不显示用户相关 UI
   $("user-badge").textContent = u.username + (u.is_admin ? " · 管理员" : "");
@@ -109,7 +111,10 @@ const TEMPLATES = {
 };
 
 // ---------- 导航 ----------
-const pages = ["home", "coding", "quiz", "kb", "settings", "stats"];function showPage(name) {
+const pages = ["home", "coding", "quiz", "kb", "settings", "stats"];
+function showPage(name) {
+  // 多用户模式未登录：一律回登录页（登录后才见菜单内容）
+  if (currentUser === undefined) { showLogin(); return; }
   pages.forEach(p => {
     const el = $("page-" + p);
     if (el) el.classList.toggle("hidden", p !== name);
@@ -1204,13 +1209,15 @@ async function tryLogin() {
 $("login-btn").onclick = tryLogin;
 
 // ---------- 注册 ----------
-let authMode = "login";
+let authMode = "login", regCodeNeeded = false;
 function setAuthTab(mode) {
   authMode = mode;
   $("auth-tab-login").className = "btn" + (mode === "login" ? " primary" : "");
   $("auth-tab-register").className = "btn" + (mode === "register" ? " primary" : "");
   $("login-btn").classList.toggle("hidden", mode !== "login");
   $("register-btn").classList.toggle("hidden", mode !== "register");
+  // 邀请码框只在「注册」tab 且服务端为邀请码模式时出现——登录不需要邀请码
+  $("reg-code").classList.toggle("hidden", !(mode === "register" && regCodeNeeded));
   $("login-error").textContent = "";
 }
 $("auth-tab-login").onclick = () => setAuthTab("login");
@@ -1223,8 +1230,8 @@ async function initRegistrationMode() {
       $("auth-tab-register").disabled = true;
       $("auth-tab-register").title = "未开放自助注册";
     } else if (d.mode === "code") {
-      $("reg-code").classList.remove("hidden");
-    } // open：不显示邀请码框
+      regCodeNeeded = true;
+    } // open：不需要邀请码；显隐统一由 setAuthTab 控制
   } catch {}
 }
 initRegistrationMode();
