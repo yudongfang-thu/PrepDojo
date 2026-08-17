@@ -243,7 +243,7 @@ async function loadProblems() {
       <td><span class="badge ${p.difficulty}">${{easy:"简单",medium:"中等",hard:"困难"}[p.difficulty]||p.difficulty}</span></td>
       <td>${p.tags.map(t => `<span class="badge tag">${esc(t)}</span>`).join("")}</td>
       <td class="muted">${p.n_cases}</td>
-      <td>${p.id.startsWith("cpg-") ? `<button class="btn" style="padding:2px 8px;font-size:11px" onclick="delProblem('${p.id}')">删除</button>` : ""}</td>
+      <td>${(p.id.startsWith("cpg-") && currentUser && currentUser.is_admin) ? `<button class="btn" style="padding:2px 8px;font-size:11px" onclick="delProblem('${p.id}')">删除</button>` : ""}</td>
     </tr>`;
   }).join("");
   tb.querySelectorAll(".problem-row").forEach(tr => {
