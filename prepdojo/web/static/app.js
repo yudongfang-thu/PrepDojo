@@ -528,6 +528,30 @@ $("coach-input").addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.isComposing) coachSend();
 });
 
+// ---------- 标签云（学习/测验共用） ----------
+const allTagData = { list: [] };
+const tagSel = { learn: new Set(), quiz: new Set() };
+
+function renderTagCloud(cloudId, which) {
+  const el = $(cloudId);
+  const sel = tagSel[which];
+  const TOP_N = 24;
+  const showAll = !!el._showAll;
+  const list = showAll ? allTagData.list : allTagData.list.slice(0, TOP_N);
+  el.innerHTML = list.map(([t, n]) =>
+    `<button class="tag-chip ${sel.has(t) ? "on" : ""}" data-tag="${esc(t)}">${esc(t)}<i>${n}</i></button>`).join("")
+    + (allTagData.list.length > TOP_N
+      ? `<button class="tag-chip more">${showAll ? "收起 ▴" : `全部 ${allTagData.list.length} 个 ▾`}</button>` : "");
+  el.querySelectorAll(".tag-chip:not(.more)").forEach(ch =>
+    ch.onclick = () => {
+      const t = ch.dataset.tag;
+      sel.has(t) ? sel.delete(t) : sel.add(t);
+      renderTagCloud(cloudId, which);
+    });
+  const more = el.querySelector(".tag-chip.more");
+  if (more) more.onclick = () => { el._showAll = !showAll; renderTagCloud(cloudId, which); };
+}
+
 // ---------- 八股：模式切换 ----------
 function setQuizMode(mode) {
   const isLearn = mode === "learn";
@@ -552,19 +576,10 @@ async function refreshLearnProgress() {
 // ---------- 八股：学习模式 ----------
 let learnQueue = [], learnIdx = 0;
 
-async function loadLearnTags() {
-  try {
-    const d = await api("/api/tags");
-    d.tags.forEach(([t, n]) => {
-      const o = document.createElement("option");
-      o.value = t; o.textContent = `${t} (${n})`;
-      $("learn-tag-select").appendChild(o);
-    });
-  } catch {}
-}
+async function loadLearnTags() { /* 由 loadTags 统一渲染标签云 */ }
 
 $("learn-start-btn").onclick = async () => {
-  const tags = $("learn-tag-select").value;
+  const tags = [...tagSel.learn].join(",");
   const n = parseInt($("learn-num").value, 10);
   const d = await api(`/api/cards/learn?tags=${encodeURIComponent(tags)}&n=${n}`);
   if (!d.cards.length) {
@@ -661,17 +676,14 @@ let quizQueue = [], quizIdx = 0, quizLastAnswer = "";
 async function loadTags() {
   try {
     const d = await api("/api/tags");
-    const sel = $("quiz-tag-select");
-    d.tags.forEach(([t, n]) => {
-      const o = document.createElement("option");
-      o.value = t; o.textContent = `${t} (${n})`;
-      sel.appendChild(o);
-    });
+    allTagData.list = d.tags;
+    renderTagCloud("learn-tag-cloud", "learn");
+    renderTagCloud("quiz-tag-cloud", "quiz");
   } catch {}
 }
 
 $("quiz-start-btn").onclick = async () => {
-  const tags = $("quiz-tag-select").value;
+  const tags = [...tagSel.quiz].join(",");
   const n = parseInt($("quiz-num").value, 10);
   const onlyLearned = $("quiz-only-learned").checked ? 1 : 0;
   const d = await api(`/api/cards/next?tags=${encodeURIComponent(tags)}&n=${n}&only_learned=${onlyLearned}`);

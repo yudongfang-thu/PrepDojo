@@ -137,6 +137,16 @@ ul.feat li b { display:inline; font-size:13.5px; color:var(--text); }
 .diff-table td.good { color:var(--text); }
 .diff-table td:not(.good):not(:first-child) { color:var(--muted); }
 
+/* 标签云 */
+.tag-cloud { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; max-height: 176px; overflow-y: auto; }
+.tag-chip { background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+  border-radius: 14px; padding: 3px 11px; font-size: 12.5px; cursor: pointer; transition: all .12s; }
+.tag-chip:hover { border-color: var(--accent); color: var(--text); }
+.tag-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tag-chip i { font-style: normal; opacity: .55; margin-left: 3px; font-size: 11px; }
+.tag-chip.more { border-style: dashed; }
+.tag-chip.more:hover { color: var(--accent); }
+
 /* 知识库导入 */
 .progress-bar { height:8px; background:var(--panel2); border-radius:6px; margin:10px 0; overflow:hidden; }
 .progress-bar > div { height:100%; width:0%; background:var(--accent); transition:width .4s; border-radius:6px; }
@@ -304,7 +314,7 @@ li.CodeMirror-hint-active.hint-kw { color: #fff; }
     <!-- 学习模式 -->
     <div id="quiz-learn-view">
       <div class="toolbar">
-        <select id="learn-tag-select"><option value="">全部标签</option></select>
+        <div class="tag-cloud" id="learn-tag-cloud"></div>
         <select id="learn-num"><option value="10">10 卡</option><option value="20">20 卡</option><option value="50">50 卡</option></select>
         <button class="btn primary" id="learn-start-btn">开始学习</button>
       </div>
@@ -340,7 +350,7 @@ li.CodeMirror-hint-active.hint-kw { color: #fff; }
     <div id="quiz-test-view" class="hidden">
       <h2 class="sec">测验（抽题 → 作答 → AI 打分 → 追问）</h2>
       <div class="toolbar">
-        <select id="quiz-tag-select"><option value="">全部标签</option></select>
+        <div class="tag-cloud" id="quiz-tag-cloud"></div>
         <select id="quiz-style">
           <option value="standard">标准面试官</option>
           <option value="strict">严格面试官</option>
