@@ -47,18 +47,20 @@ main { padding:20px; max-width:1280px; margin:0 auto; }
   display: grid;
   grid-template-columns: minmax(215px, 0.85fr) minmax(330px, 1.3fr) minmax(350px, 1.15fr);
   gap: 16px;
+  height: calc(100vh - 130px);
   align-items: stretch;
 }
-.col-stmt { max-height: calc(100vh - 130px); overflow-y: auto; display: flex; flex-direction: column; padding-right: 4px; }
+.col-stmt { display: flex; flex-direction: column; padding-right: 4px;
+  overflow-y: auto; min-height: 0; }
 .col-stmt > .card { flex: 1; }
 .col-editor { display: flex; flex-direction: column; min-height: 0; }
-.col-editor #editor-holder { flex: 1; min-height: 340px; }
+.col-editor #editor-holder { flex: 1; min-height: 0; }
 .col-editor #editor-holder .CodeMirror { height: 100%; border-radius: 8px; border: 1px solid var(--border); }
 .col-editor #fallback-editor { height: 100%; min-height: 340px; }
 .col-editor #result-area { max-height: 300px; overflow-y: auto; flex-shrink: 0; margin-top: 12px; }
 .col-coach { display: flex; min-height: 0; }
 .col-coach > .card { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-#coach-messages { flex: 1; overflow-y: auto; max-height: 60vh; min-height: 220px; margin: 10px 0; padding-right: 4px; }
+#coach-messages { flex: 1; overflow-y: auto; min-height: 0; margin: 10px 0; padding-right: 4px; }
 @media (max-width: 1180px) {
   .detail-grid { grid-template-columns: 1fr 1fr; }
   .col-stmt { grid-column: 1 / -1; }
