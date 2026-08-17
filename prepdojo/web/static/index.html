@@ -19,6 +19,9 @@
           --red:#cf222e; --amber:#9a6700; --purple:#8250df; }
 }
 * { box-sizing: border-box; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 /* CodeMirror 内部依赖原生 content-box（全局 border-box 会压缩行号槽导致行号与代码重叠）*/
 .CodeMirror, .CodeMirror-gutters, .CodeMirror-linenumber,
 .CodeMirror-gutter-elt, .CodeMirror pre { box-sizing: content-box; }
@@ -47,7 +50,8 @@ main { padding:20px; max-width:1280px; margin:0 auto; }
   gap: 16px;
   align-items: stretch;
 }
-.col-stmt { display: flex; flex-direction: column; padding-right: 4px; }
+.col-stmt { display: flex; flex-direction: column; padding-right: 4px;
+  max-height: calc(100vh - 130px); overflow-y: auto; }
 .col-stmt > .card { flex: 1; }
 .col-editor { display: flex; flex-direction: column; min-height: 0; }
 .col-editor #editor-holder { flex: 1; min-height: 340px; }
