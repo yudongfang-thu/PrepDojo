@@ -439,16 +439,20 @@ async function doCoachFix(r) {
     }
     if (thinkBox) thinkBox.open = false;
     if (reply) {
-      const codeMatch = reply.match(/```(?:\w+)?\s*\n([\s\S]*?)```/);
-      const fixedCode = codeMatch ? codeMatch[1].trim() : reply;
-      const description = reply.replace(/```[\s\S]*?```/g, "").trim();
-      assistantDiv.innerHTML = `<div class="coach-msg assistant" style="white-space:pre-wrap">${esc(description).slice(0, 400)}</div>
-        <pre style="background:var(--panel2);border-radius:8px;padding:10px;overflow:auto;max-height:320px;font-size:12.5px;line-height:1.6">${esc(fixedCode)}</pre>
-        <button class="btn primary" style="margin-top:8px" id="coach-apply-fix">✅ 应用修复</button>`;
-      $("coach-apply-fix").onclick = () => {
-        setEditorCode(fixedCode, $("lang-select").value);
-        coachRender("tool", "✅ 代码已应用到编辑器，改完再提交试试", "tool");
-      };
+      if (reply.startsWith("⚠️")) {
+        assistantDiv.innerHTML = `<div class="coach-msg tool" style="color:var(--amber)">${esc(reply)}</div>`;
+      } else {
+        const codeMatch = reply.match(/```(?:\w+)?\s*\n([\s\S]*?)```/);
+        const fixedCode = codeMatch ? codeMatch[1].trim() : reply;
+        const description = reply.replace(/```[\s\S]*?```/g, "").trim();
+        assistantDiv.innerHTML = `<div class="coach-msg assistant" style="white-space:pre-wrap">${esc(description).slice(0, 400)}</div>
+          <pre style="background:var(--panel2);border-radius:8px;padding:10px;overflow:auto;max-height:320px;font-size:12.5px;line-height:1.6">${esc(fixedCode)}</pre>
+          <button class="btn primary" style="margin-top:8px" id="coach-apply-fix">✅ 应用修复</button>`;
+        $("coach-apply-fix").onclick = () => {
+          setEditorCode(fixedCode, $("lang-select").value);
+          coachRender("tool", "✅ 代码已应用到编辑器，改完再提交试试", "tool");
+        };
+      }
     }
   } catch (e) {
     assistantDiv.textContent = "修复失败：" + e.message;

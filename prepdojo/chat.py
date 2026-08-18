@@ -324,4 +324,6 @@ def fix_code(llm, problem, code, language, verdict, detail, on_event=None):
             reply = ev["content"]
         elif on_event:
             on_event(ev["type"], ev["text"])
+    if not reply or not reply.strip():
+        return "⚠️ token 不足：推理模型的思考过程过长，耗尽了输出预算。请稍后重试，或简化代码后再次提交。"
     return reply
