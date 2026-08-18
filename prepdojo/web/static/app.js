@@ -402,7 +402,8 @@ async function doCoachFix(r) {
   if (!currentProblem) return;
   const btn = $("coach-fix-btn");
   if (btn) { btn.disabled = true; btn.textContent = "修复中…"; }
-  let reply = "", assistantDiv = coachRender("assistant", "", "assistant");
+  let reply = "", assistantDiv = coachRender("assistant", "思考中…", "assistant");
+  let thinkBox = null;
   try {
     const resp = await fetch("/api/fix/" + currentProblem.id, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -425,8 +426,12 @@ async function doCoachFix(r) {
         const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
         if (!chunk.startsWith("data: ")) continue;
         const ev = JSON.parse(chunk.slice(6));
-        if (ev.event === "content_delta" || ev.event === "thinking_delta") {
+        if (ev.event === "thinking_delta") {
+          if (!thinkBox) thinkBox = makeThinkingBox(assistantDiv.parentNode || $("coach-messages"));
+          appendThinking(thinkBox, ev.text);
+        } else if (ev.event === "content_delta") {
           reply += ev.text;
+          assistantDiv.textContent = reply;
         } else if (ev.event === "reply") {
           reply = ev.code || ev.text || "";
         } else if (ev.event === "error") {
@@ -434,6 +439,7 @@ async function doCoachFix(r) {
         }
       }
     }
+    if (thinkBox) thinkBox.open = false;
     if (reply) {
       const codeMatch = reply.match(/```(?:\w+)?\s*\n([\s\S]*?)```/);
       const fixedCode = codeMatch ? codeMatch[1].trim() : reply;
