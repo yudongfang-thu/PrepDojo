@@ -379,8 +379,9 @@ function renderResult(r) {
 }
 
 async function doFixCode(r) {
-  if (!currentProblem) return;
+  if (!currentProblem) { alert("当前题目信息丢失，请刷新页面后重试"); return; }
   const btn = $("fix-code-btn");
+  if (!btn) { alert("修复按钮未找到，请重新提交一次判题"); return; }
   btn.disabled = true; btn.textContent = "🔧 AI 修复中…";
   const area = $("fix-result-area");
   area.innerHTML = "";
