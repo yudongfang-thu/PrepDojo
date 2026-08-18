@@ -319,7 +319,7 @@ def fix_code(llm, problem, code, language, verdict, detail, on_event=None):
 请直接给出修复后的代码。"""
     sys = FIX_SYSTEM.format(verdict=verdict)
     reply = ""
-    for ev in llm.stream_chat(sys, user, max_tokens=4000):
+    for ev in llm.stream_chat(sys, user, max_tokens=16000):
         if ev["type"] == "done":
             reply = ev["content"]
         elif on_event:
