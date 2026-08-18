@@ -388,20 +388,18 @@ function renderResult(r) {
   }
 }
 
+let lastFailedResult = null;  // 最近一次非 AC 的判题结果
 function offerFixInCoach(r) {
-  const div = document.createElement("div");
-  div.className = "coach-msg tool";
-  div.innerHTML = `判题结果：<b class="verdict-${r.verdict}">${r.verdict}</b>　
-    <button class="btn" style="padding:4px 12px;font-size:13px" id="coach-fix-btn">🔧 AI 修复</button>`;
-  $("coach-messages").appendChild(div);
-  $("coach-messages").scrollTop = 1e9;
-  $("coach-fix-btn").onclick = () => doCoachFix(r);
+  lastFailedResult = r;
+  const btn = $("coach-fix-btn");
+  if (btn) { btn.disabled = false; btn.style.opacity = "1"; btn.textContent = "🔧 修复 " + r.verdict; }
+  coachRender("tool", `判题结果：<b class="verdict-${r.verdict}">${r.verdict}</b>　可点右上角「🔧 修复」让 AI 改代码`, "tool");
 }
 
 async function doCoachFix(r) {
   if (!currentProblem) return;
   const btn = $("coach-fix-btn");
-  if (btn) { btn.disabled = true; btn.textContent = "修复中…"; }
+  if (btn) { btn.disabled = true; btn.textContent = "修复中…"; btn.style.opacity = ".6"; }
   let reply = "", assistantDiv = coachRender("assistant", "思考中…", "assistant");
   let thinkBox = null;
   try {
@@ -455,7 +453,7 @@ async function doCoachFix(r) {
   } catch (e) {
     assistantDiv.textContent = "修复失败：" + e.message;
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "🔧 AI 修复"; }
+    if (btn) { btn.disabled = false; btn.textContent = "🔧 修复"; btn.style.opacity = "1"; }
   }
 }
 
@@ -1493,6 +1491,11 @@ $("logout-btn").onclick = async () => {
   const saved = localStorage.getItem('prepdojo-col-widths');
   if (saved) grid.style.gridTemplateColumns = saved;
 })();
+
+// 固定修复按钮（教练栏标题旁）
+$("coach-fix-btn").onclick = () => {
+  if (lastFailedResult) doCoachFix(lastFailedResult);
+};
 
 // ---------- 启动 ----------
 async function boot() {
