@@ -280,9 +280,16 @@ async function openProblem(pid) {
   st += `\n\n（共 ${currentProblem.n_cases} 组测试用例；时限 ${currentProblem.time_limit_ms}ms）`;
   $("statement").textContent = st;
   const lang = $("lang-select").value;
-  // 草稿优先：用户上次写到一半的代码不丢（多用户按人命名空间）
+  // 草稿优先 → 无草稿时从提交记录恢复上次代码 → 都没有才用模板
   const draft = localStorage.getItem(draftKey(currentProblem.id, lang));
-  setEditorCode(draft && draft.trim() ? draft : TEMPLATES[lang], lang);
+  if (draft && draft.trim()) {
+    setEditorCode(draft, lang);
+  } else {
+    setEditorCode(TEMPLATES[lang], lang); // 先设模板，再异步恢复（避免白屏）
+    api("/api/submissions/last/" + currentProblem.id + "?language=" + lang)
+      .then(r => { if (r && r.code && r.code.trim()) setEditorCode(r.code, lang); })
+      .catch(() => {});
+  }
   saveDraft();
   $("result-area").innerHTML = "";
   lastSubmission = null;

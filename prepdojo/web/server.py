@@ -596,6 +596,13 @@ def create_app(cfg: Config, db: DB, multiuser: bool = False) -> FastAPI:
         allp = {p["id"]: p for p in db.list_problems(user["username"])}
         return {"wrong": [allp[i] for i in ids if i in allp]}
 
+    @app.get("/api/submissions/last/{pid}")
+    def last_submission_code(pid: str, language: str = "",
+                             user: dict = Depends(require_user)):
+        """打开题目时恢复上次提交的代码（草稿丢失后回退用）。"""
+        code = db.last_submission_code(pid, language or "python", user_id=user["username"])
+        return {"code": code}
+
     @app.get("/api/problems/{pid}")
     def problem_detail(pid: str, user: dict = Depends(require_user)):
         p = db.get_problem(pid)

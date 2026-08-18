@@ -638,6 +638,14 @@ class DB:
             "submitted_at": r["submitted_at"],
         }
 
+    def last_submission_code(self, problem_id: str, language: str,
+                             user_id: str = "local") -> Optional[str]:
+        """取某道题+语言的上次提交代码（草稿丢失时恢复用）。"""
+        r = self.execute(
+            "SELECT code FROM submissions WHERE problem_id=? AND language=? AND user_id=? "
+            "ORDER BY id DESC LIMIT 1", (problem_id, language, user_id)).fetchone()
+        return r["code"] if r else None
+
     def set_review(self, sid: int, review: dict, user_id: str = "local") -> bool:
         cur = self.execute(
             "UPDATE submissions SET reviewed=1, review=? WHERE id=? AND user_id=?",
