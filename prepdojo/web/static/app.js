@@ -1462,10 +1462,10 @@ $("logout-btn").onclick = async () => {
     } else {
       const [c1, c2, c3] = getCols();
       if (!c1 || !c2 || !c3) return;
-      // 检测鼠标是否在列缝隙区域（题面|编辑器、编辑器|教练、教练右边缘）
-      if (e.clientX >= c1.right - 2 && e.clientX <= c2.left + 2) { grid.style.cursor = 'col-resize'; grid._dragIdx = 0; }
-      else if (e.clientX >= c2.right - 2 && e.clientX <= c3.left + 2) { grid.style.cursor = 'col-resize'; grid._dragIdx = 1; }
-      else if (e.clientX >= c3.right - 6 && e.clientX <= c3.right + 6) { grid.style.cursor = 'col-resize'; grid._dragIdx = 1; }
+      const gap = 4;
+      if (Math.abs(e.clientX - c1.right) < gap) { grid.style.cursor = 'col-resize'; grid._dragIdx = 0; }
+      else if (Math.abs(e.clientX - c2.right) < gap) { grid.style.cursor = 'col-resize'; grid._dragIdx = 1; }
+      else if (Math.abs(e.clientX - c3.right) < gap) { grid.style.cursor = 'col-resize'; grid._dragIdx = 1; }
       else { grid.style.cursor = ''; }
     }
   });
