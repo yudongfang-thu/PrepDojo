@@ -107,6 +107,7 @@ def example_config_yaml() -> str:
     return """# PrepDojo 配置（本文件位于 data/ 目录，已被 .gitignore 排除）
 llm:
   # DeepSeek 官方 API（https://platform.deepseek.com 申请）
+  # 也支持 vLLM / SGLang 等 OpenAI-compatible 本地服务；api_key 可填任意非空值，例如 dummy-key
   api_key: "sk-..."
   base_url: "https://api.deepseek.com/v1"
   model: "deepseek-chat"

@@ -1,6 +1,10 @@
 # PrepDojo · 秋招刷题小助手
 
+![PrepDojo 首页](images/home.png)
+
 > **本地优先（local-first）的 AI 驱动刷题工具**：代码题本地沙箱判题，AI 教练可**自主调用判题沙箱**验证代码、讲解思路；八股由 AI 面试官出题、打分、追问；把你自己的知识目录（PDF / Markdown）一键结构化为题卡。
+
+
 
 ## 为什么是 local-first
 
