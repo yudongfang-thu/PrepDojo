@@ -638,13 +638,19 @@ class DB:
             "submitted_at": r["submitted_at"],
         }
 
-    def last_submission_code(self, problem_id: str, language: str,
-                             user_id: str = "local") -> Optional[str]:
-        """取某道题+语言的上次提交代码（草稿丢失时恢复用）。"""
-        r = self.execute(
-            "SELECT code FROM submissions WHERE problem_id=? AND language=? AND user_id=? "
-            "ORDER BY id DESC LIMIT 1", (problem_id, language, user_id)).fetchone()
-        return r["code"] if r else None
+    def last_submission_code(self, problem_id: str, language: str = "",
+                             user_id: str = "local") -> Optional[dict]:
+        """取某道题的上次提交代码与语言（草稿丢失时恢复用）。
+        language 为空时不限制语言，取最近一次提交。"""
+        if language:
+            r = self.execute(
+                "SELECT code, language FROM submissions WHERE problem_id=? AND language=? AND user_id=? "
+                "ORDER BY id DESC LIMIT 1", (problem_id, language, user_id)).fetchone()
+        else:
+            r = self.execute(
+                "SELECT code, language FROM submissions WHERE problem_id=? AND user_id=? "
+                "ORDER BY id DESC LIMIT 1", (problem_id, user_id)).fetchone()
+        return {"code": r["code"], "language": r["language"]} if r else None
 
     def set_review(self, sid: int, review: dict, user_id: str = "local") -> bool:
         cur = self.execute(

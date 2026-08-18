@@ -599,9 +599,10 @@ def create_app(cfg: Config, db: DB, multiuser: bool = False) -> FastAPI:
     @app.get("/api/submissions/last/{pid}")
     def last_submission_code(pid: str, language: str = "",
                              user: dict = Depends(require_user)):
-        """打开题目时恢复上次提交的代码（草稿丢失后回退用）。"""
-        code = db.last_submission_code(pid, language or "python", user_id=user["username"])
-        return {"code": code}
+        """打开题目时恢复上次提交的代码（草稿丢失后回退用）。
+        language 为空时取最近一次提交（不限语言），同时返回语言字段。"""
+        r = db.last_submission_code(pid, language, user_id=user["username"])
+        return {"code": r["code"] if r else None, "language": r["language"] if r else None}
 
     @app.get("/api/problems/{pid}")
     def problem_detail(pid: str, user: dict = Depends(require_user)):

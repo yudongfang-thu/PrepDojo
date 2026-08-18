@@ -280,14 +280,22 @@ async function openProblem(pid) {
   st += `\n\n（共 ${currentProblem.n_cases} 组测试用例；时限 ${currentProblem.time_limit_ms}ms）`;
   $("statement").textContent = st;
   const lang = $("lang-select").value;
-  // 草稿优先 → 无草稿时从提交记录恢复上次代码 → 都没有才用模板
+  // 草稿优先 → 无草稿时从提交记录不限语言恢复 → 都没有才用模板
   const draft = localStorage.getItem(draftKey(currentProblem.id, lang));
   if (draft && draft.trim()) {
     setEditorCode(draft, lang);
   } else {
-    setEditorCode(TEMPLATES[lang], lang); // 先设模板，再异步恢复（避免白屏）
-    api("/api/submissions/last/" + currentProblem.id + "?language=" + lang)
-      .then(r => { if (r && r.code && r.code.trim()) setEditorCode(r.code, lang); })
+    setEditorCode(TEMPLATES[lang], lang); // 先设模板，再异步恢复
+    api("/api/submissions/last/" + currentProblem.id)  // 不限语言，取最近一次提交
+      .then(r => {
+        if (r && r.code && r.code.trim()) {
+          // 如果上次提交的语言和当前不同，自动切换下拉
+          if (r.language && r.language !== lang) {
+            $("lang-select").value = r.language;
+          }
+          setEditorCode(r.code, r.language || lang);
+        }
+      })
       .catch(() => {});
   }
   saveDraft();
@@ -320,10 +328,16 @@ function saveDraft() {
 $("lang-select").onchange = () => {
   const lang = $("lang-select").value;
   const cur = getEditorCode().trim();
-  if (!cur || cur === TEMPLATES.python.trim() || cur === TEMPLATES.cpp.trim())
+  if (!cur || cur === TEMPLATES.python.trim() || cur === TEMPLATES.cpp.trim()) {
+    // 模板未修改：尝试从提交记录恢复该语言的代码
     setEditorCode(TEMPLATES[lang], lang);
-  else if (currentProblem) {
-    // 已有代码：切换语言时尝试恢复该语言的草稿，无草稿则给模板
+    if (currentProblem) {
+      api("/api/submissions/last/" + currentProblem.id + "?language=" + lang)
+        .then(r => { if (r && r.code && r.code.trim()) setEditorCode(r.code, lang); })
+        .catch(() => {});
+    }
+  } else if (currentProblem) {
+    // 已有代码：切换语言时尝试恢复该语言的草稿
     const draft = localStorage.getItem(draftKey(currentProblem.id, lang));
     if (draft && draft.trim()) setEditorCode(draft, lang);
   }
