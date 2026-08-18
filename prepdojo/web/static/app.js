@@ -367,25 +367,28 @@ function renderResult(r) {
         return `<tr><td>#${c.idx}</td><td class="verdict-${c.verdict}">${c.verdict}</td><td>${c.time_ms}ms</td><td class="muted">${det}</td></tr>`;
       }).join("") + "</tbody></table>";
   }
-  // 非 AC 时显示 AI 修复按钮
-  if (r.verdict !== "AC") {
-    html += `<div class="toolbar" style="margin-top:12px"><button class="btn" id="fix-code-btn">🔧 AI 修复</button></div>
-      <div id="fix-result-area" style="margin-top:10px"></div>`;
-  }
   $("result-area").innerHTML = html;
-  // 绑定修复按钮
-  const fb = $("fix-code-btn");
-  if (fb) fb.onclick = () => doFixCode(r);
+  // 非 AC 时在教练栏弹修复入口
+  if (r.verdict !== "AC" && currentProblem) {
+    setTimeout(() => offerFixInCoach(r), 100);
+  }
 }
 
-async function doFixCode(r) {
-  if (!currentProblem) { alert("当前题目信息丢失，请刷新页面后重试"); return; }
-  const btn = $("fix-code-btn");
-  if (!btn) { alert("修复按钮未找到，请重新提交一次判题"); return; }
-  btn.disabled = true; btn.textContent = "🔧 AI 修复中…";
-  const area = $("fix-result-area");
-  area.innerHTML = "";
-  let reply = "";
+function offerFixInCoach(r) {
+  const div = document.createElement("div");
+  div.className = "coach-msg tool";
+  div.innerHTML = `判题结果：<b class="verdict-${r.verdict}">${r.verdict}</b>　
+    <button class="btn" style="padding:4px 12px;font-size:13px" id="coach-fix-btn">🔧 AI 修复</button>`;
+  $("coach-messages").appendChild(div);
+  $("coach-messages").scrollTop = 1e9;
+  $("coach-fix-btn").onclick = () => doCoachFix(r);
+}
+
+async function doCoachFix(r) {
+  if (!currentProblem) return;
+  const btn = $("coach-fix-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "修复中…"; }
+  let reply = "", assistantDiv = coachRender("assistant", "", "assistant");
   try {
     const resp = await fetch("/api/fix/" + currentProblem.id, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -408,34 +411,31 @@ async function doFixCode(r) {
         const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
         if (!chunk.startsWith("data: ")) continue;
         const ev = JSON.parse(chunk.slice(6));
-        if (ev.event === "thinking_delta") {
-          reply += ev.text;
-        } else if (ev.event === "content_delta") {
+        if (ev.event === "content_delta" || ev.event === "thinking_delta") {
           reply += ev.text;
         } else if (ev.event === "reply") {
           reply = ev.code || ev.text || "";
         } else if (ev.event === "error") {
-          area.innerHTML = `<div class="card"><p class="fail-line">${esc(ev.message)}</p></div>`;
+          assistantDiv.textContent = "修复失败：" + ev.message;
         }
       }
     }
     if (reply) {
-      // 提取代码块
       const codeMatch = reply.match(/```(?:\w+)?\s*\n([\s\S]*?)```/);
       const fixedCode = codeMatch ? codeMatch[1].trim() : reply;
       const description = reply.replace(/```[\s\S]*?```/g, "").trim();
-      area.innerHTML = `<div class="card">
-        <p class="muted">${esc(description).slice(0, 300)}</p>
-        <pre style="background:var(--panel2);border-radius:8px;padding:12px;overflow:auto;max-height:400px;font-size:13px;line-height:1.65">${esc(fixedCode)}</pre>
-        <div class="toolbar" style="margin-top:8px">
-          <button class="btn primary" id="apply-fix-btn">✅ 应用修复（替换编辑器内容）</button>
-        </div></div>`;
-      $("apply-fix-btn").onclick = () => { setEditorCode(fixedCode, $("lang-select").value); area.innerHTML = ""; };
+      assistantDiv.innerHTML = `<div class="coach-msg assistant" style="white-space:pre-wrap">${esc(description).slice(0, 400)}</div>
+        <pre style="background:var(--panel2);border-radius:8px;padding:10px;overflow:auto;max-height:320px;font-size:12.5px;line-height:1.6">${esc(fixedCode)}</pre>
+        <button class="btn primary" style="margin-top:8px" id="coach-apply-fix">✅ 应用修复</button>`;
+      $("coach-apply-fix").onclick = () => {
+        setEditorCode(fixedCode, $("lang-select").value);
+        coachRender("tool", "✅ 代码已应用到编辑器，改完再提交试试", "tool");
+      };
     }
   } catch (e) {
-    area.innerHTML = `<div class="card"><p class="fail-line">${esc(e.message)}</p></div>`;
+    assistantDiv.textContent = "修复失败：" + e.message;
   } finally {
-    btn.disabled = false; btn.textContent = "🔧 AI 修复";
+    if (btn) { btn.disabled = false; btn.textContent = "🔧 AI 修复"; }
   }
 }
 
