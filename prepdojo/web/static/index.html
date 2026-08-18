@@ -51,21 +51,15 @@ main { padding:20px; max-width:1280px; margin:0 auto; }
   height: calc(100vh - 130px);
   align-items: stretch;
 }
-/* 可拖拽列宽手柄 */
-.col-resize-handle { position: absolute; top: 0; width: 8px; height: 100%; cursor: col-resize; z-index: 5; }
-.col-resize-handle:hover { background: var(--accent); opacity: .15; }
-.col-resize-handle[data-side="left"] { left: 0; }
-.col-resize-handle[data-side="right"] { left: 0; }
-
 .col-stmt { display: flex; flex-direction: column; padding-right: 4px; position: relative;
   overflow-y: auto; min-height: 0; }
 .col-stmt > .card { flex: 1; }
-.col-editor { display: flex; flex-direction: column; min-height: 0; overflow: hidden; position: relative; }
+.col-editor { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .col-editor #editor-holder { flex: 1; min-height: 0; }
 .col-editor #editor-holder .CodeMirror { height: 100%; border-radius: 8px; border: 1px solid var(--border); }
 .col-editor #fallback-editor { height: 100%; }
 .col-editor #result-area { max-height: 300px; overflow-y: auto; flex-shrink: 0; margin-top: 12px; }
-.col-coach { display: flex; min-height: 0; position: relative; }
+.col-coach { display: flex; min-height: 0; }
 .col-coach > .card { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 #coach-messages { flex: 1; overflow-y: auto; min-height: 0; margin: 10px 0; padding-right: 4px; }
 @media (max-width: 1180px) {
@@ -296,7 +290,6 @@ li.CodeMirror-hint-active.hint-kw { color: #fff; }
         题面与用例均为本仓库自写。接入自己的 LeetCode 题记录见 README（BYO 模式）。</p>
     </div>
     <div id="problem-detail-view" class="hidden detail-grid">
-      <div class="col-resize-handle" data-side="left"></div>
       <div class="col-stmt">
         <div style="display:flex;align-items:center;gap:10px">
           <button class="btn" id="back-btn">← 返回</button>
@@ -316,7 +309,6 @@ li.CodeMirror-hint-active.hint-kw { color: #fff; }
         <div id="editor-holder"></div>
         <div id="result-area" style="margin-top:14px"></div>
       </div>
-      <div class="col-resize-handle" data-side="right"></div>
       <div class="col-coach">
         <div id="coach-panel" class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;border-bottom:1px solid var(--border)">

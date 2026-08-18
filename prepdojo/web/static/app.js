@@ -1445,51 +1445,50 @@ $("logout-btn").onclick = async () => {
 (function() {
   const grid = document.getElementById('problem-detail-view');
   if (!grid) return;
-  let dragHandle = null, startX = 0, leftCol = null, leftStartW = 0, rightStartW = 0;
+  let dragging = false, startX = 0, startCols = [], startIdx = 0;
 
-  grid.addEventListener('mousedown', e => {
-    if (!e.target.classList.contains('col-resize-handle')) return;
-    dragHandle = e.target;
-    const side = dragHandle.dataset.side;
-    const cols = grid.querySelectorAll('.col-stmt, .col-editor, .col-coach');
-    if (side === 'left') {
-      leftCol = cols[0];  // col-stmt
-      rightCol = cols[1]; // col-editor
+  function getCols() {
+    return [document.querySelector('.col-stmt'), document.querySelector('.col-editor'),
+            document.querySelector('.col-coach')].map(c => c ? c.getBoundingClientRect() : null);
+  }
+
+  grid.addEventListener('mousemove', e => {
+    if (dragging) {
+      const dx = e.clientX - startX;
+      const w = [...startCols];
+      w[startIdx] = Math.max(100, startCols[startIdx] + dx);
+      w[startIdx+1] = Math.max(100, startCols[startIdx+1] - dx);
+      grid.style.gridTemplateColumns = w.map(x => x + 'px').join(' ');
     } else {
-      leftCol = cols[1];  // col-editor
-      rightCol = cols[2]; // col-coach
+      const [c1, c2, c3] = getCols();
+      if (!c1 || !c2 || !c3) return;
+      const gap = 4;
+      if (Math.abs(e.clientX - c1.right) < gap) { grid.style.cursor = 'col-resize'; grid._dragIdx = 0; }
+      else if (Math.abs(e.clientX - c2.right) < gap) { grid.style.cursor = 'col-resize'; grid._dragIdx = 1; }
+      else { grid.style.cursor = ''; }
     }
-    startX = e.clientX;
-    leftStartW = leftCol.getBoundingClientRect().width;
-    rightStartW = rightCol.getBoundingClientRect().width;
-    grid.style.userSelect = 'none';
-    e.preventDefault();
   });
 
-  document.addEventListener('mousemove', e => {
-    if (!dragHandle) return;
-    const dx = e.clientX - startX;
-    const totalW = leftStartW + rightStartW;
-    const newLeft = Math.max(120, Math.min(totalW - 120, leftStartW + dx));
-    // 转百分比
-    const gridW = grid.getBoundingClientRect().width;
-    const gap = 16; // grid gap
-    const col1Pct = ((newLeft / gridW) * 100).toFixed(1);
-    const col2Pct = (((totalW - newLeft) / gridW) * 100).toFixed(1);
-    const col3Pct = (100 - parseFloat(col1Pct) - parseFloat(col2Pct) - 4).toFixed(1);
-    grid.style.gridTemplateColumns = col1Pct + '% ' + col2Pct + '% ' + col3Pct + '%';
+  grid.addEventListener('mousedown', e => {
+    if (grid.style.cursor === 'col-resize') {
+      startCols = getCols().map(c => c.width);
+      startX = e.clientX;
+      startIdx = grid._dragIdx;
+      dragging = true;
+      grid.style.userSelect = 'none';
+      e.preventDefault();
+    }
   });
 
   document.addEventListener('mouseup', () => {
-    if (!dragHandle) return;
-    grid.style.userSelect = '';
-    dragHandle = null;
-    // 保存列宽到 localStorage
-    const cols = grid.style.gridTemplateColumns;
-    if (cols) localStorage.setItem('prepdojo-col-widths', cols);
+    if (dragging) {
+      grid.style.userSelect = '';
+      dragging = false;
+      const cols = grid.style.gridTemplateColumns;
+      if (cols) localStorage.setItem('prepdojo-col-widths', cols);
+    }
   });
 
-  // 恢复上次保存的列宽
   const saved = localStorage.getItem('prepdojo-col-widths');
   if (saved) grid.style.gridTemplateColumns = saved;
 })();
