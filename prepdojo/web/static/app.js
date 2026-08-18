@@ -426,7 +426,7 @@ async function doCoachFix(r) {
         const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
         if (!chunk.startsWith("data: ")) continue;
         const ev = JSON.parse(chunk.slice(6));
-        if (ev.event === "thinking_delta") {
+        if (ev.event === "thinking_delta" || ev.event === "reasoning_delta") {
           if (!thinkBox) thinkBox = makeThinkingBox(assistantDiv.parentNode || $("coach-messages"));
           appendThinking(thinkBox, ev.text);
         } else if (ev.event === "content_delta") {
