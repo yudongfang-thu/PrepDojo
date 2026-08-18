@@ -1250,6 +1250,11 @@ $("set-save-btn").onclick = async () => {
     $("set-status").textContent = d.llm_ready ? `● 已保存（${d.model}）` : "已保存，但 key 仍为空";
     $("set-apikey").value = "";
     loadSettings(); refreshBadge();
+    // 自动测试连通性
+    try {
+      const tr = await api("/api/llm/test", { method: "POST" });
+      $("set-status").textContent = tr.ok ? "● 连接成功 ✅" : "❌ " + tr.detail;
+    } catch (e) { $("set-status").textContent = "⚠️ 无法测试: " + e.message; }
   } catch (e) { alert("保存失败：" + e.message); }
 };
 

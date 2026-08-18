@@ -217,6 +217,23 @@ def create_app(cfg: Config, db: DB, multiuser: bool = False) -> FastAPI:
         cfg.api_key, cfg.base_url, cfg.model = new_key, base_url, model
         return {"ok": True, "llm_ready": cfg.llm_ready, "model": cfg.model}
 
+    @app.post("/api/llm/test")
+    def llm_test(user: dict = Depends(require_user)):
+        """发一条最简消息验证 API 连通性，返回成功或明确错误。"""
+        llm = _user_llm(user)
+        if llm is None:
+            return {"ok": False, "detail": "未配置 API key，请在下方填写 key 并保存"}
+        try:
+            answer = llm.chat("", "回复一个字：通", max_tokens=500)
+            return {"ok": True, "detail": "连接成功，模型可正常响应", "model": cfg.model}
+        except Exception as e:
+            msg = str(e)
+            if "401" in msg or "invalid" in msg.lower() or "Authentication" in msg:
+                return {"ok": False, "detail": "API key 无效（401 认证失败），请检查 key"}
+            if "timeout" in msg.lower():
+                return {"ok": False, "detail": "连接超时，请检查 base_url 是否可达"}
+            return {"ok": False, "detail": msg[:200]}
+
     @app.get("/api/llm/models")
     def llm_models(admin: dict = Depends(require_admin)):
         """扫描 base_url 下可用模型列表（管理员：请求携带服务器共享 key）。"""
