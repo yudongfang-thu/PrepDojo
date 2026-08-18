@@ -113,6 +113,12 @@ function initEditor() {
         "Cmd-Enter": () => $("submit-btn").click(),
         "Ctrl-Enter": () => $("submit-btn").click(),
         "Ctrl-Space": cmr => cmr.showHint({ hint: mergedHint, completeSingle: false }),
+        // 撤销/重做：显式绑定防止被浏览器截获
+        "Cmd-Z": cmr => cmr.undo(),
+        "Cmd-Shift-Z": cmr => cmr.redo(),
+        "Ctrl-Z": cmr => cmr.undo(),
+        "Ctrl-Shift-Z": cmr => cmr.redo(),
+        "Ctrl-Y": cmr => cmr.redo(),
       },
     });
     // 输入标识符 ≥2 字符后自动弹出补全（180ms 防抖）
