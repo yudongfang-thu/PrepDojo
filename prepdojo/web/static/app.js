@@ -1440,6 +1440,60 @@ $("logout-btn").onclick = async () => {
   location.reload();
 };
 
+
+// ---------- 拖拽调整列宽 ----------
+(function() {
+  const grid = document.getElementById('problem-detail-view');
+  if (!grid) return;
+  let dragHandle = null, startX = 0, leftCol = null, leftStartW = 0, rightStartW = 0;
+
+  grid.addEventListener('mousedown', e => {
+    if (!e.target.classList.contains('col-resize-handle')) return;
+    dragHandle = e.target;
+    const side = dragHandle.dataset.side;
+    const cols = grid.querySelectorAll('.col-stmt, .col-editor, .col-coach');
+    if (side === 'left') {
+      leftCol = cols[0];  // col-stmt
+      rightCol = cols[1]; // col-editor
+    } else {
+      leftCol = cols[1];  // col-editor
+      rightCol = cols[2]; // col-coach
+    }
+    startX = e.clientX;
+    leftStartW = leftCol.getBoundingClientRect().width;
+    rightStartW = rightCol.getBoundingClientRect().width;
+    grid.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragHandle) return;
+    const dx = e.clientX - startX;
+    const totalW = leftStartW + rightStartW;
+    const newLeft = Math.max(120, Math.min(totalW - 120, leftStartW + dx));
+    // 转百分比
+    const gridW = grid.getBoundingClientRect().width;
+    const gap = 16; // grid gap
+    const col1Pct = ((newLeft / gridW) * 100).toFixed(1);
+    const col2Pct = (((totalW - newLeft) / gridW) * 100).toFixed(1);
+    const col3Pct = (100 - parseFloat(col1Pct) - parseFloat(col2Pct) - 4).toFixed(1);
+    grid.style.gridTemplateColumns = col1Pct + '% ' + col2Pct + '% ' + col3Pct + '%';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragHandle) return;
+    grid.style.userSelect = '';
+    dragHandle = null;
+    // 保存列宽到 localStorage
+    const cols = grid.style.gridTemplateColumns;
+    if (cols) localStorage.setItem('prepdojo-col-widths', cols);
+  });
+
+  // 恢复上次保存的列宽
+  const saved = localStorage.getItem('prepdojo-col-widths');
+  if (saved) grid.style.gridTemplateColumns = saved;
+})();
+
 // ---------- 启动 ----------
 async function boot() {
   try {
