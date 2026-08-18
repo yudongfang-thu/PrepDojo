@@ -291,3 +291,37 @@ def ai_judge_report(reply_text: str) -> Optional[dict]:
         except _json.JSONDecodeError:
             pass
     return None
+
+# ---------- 代码修复（直接给代码，不引导） ----------
+
+FIX_SYSTEM = """你是代码修复助手。考生代码判题结果为 {verdict}。请直接给出修复后的完整代码。
+
+要求：
+1. 在代码中用注释标记修改处（// 或 # ← 修复：原来XX，改为YY）
+2. 代码块后用一句话说明主要改动
+3. 不要引导、不要提示、不要"你可以试试"——直接给代码
+4. 如果代码是 CE（编译错误），优先修复语法/编译问题；如果是 WA，修复逻辑错误；
+   如果是 TLE，给出优化后的代码（标注复杂度变化）
+5. 保持原代码的风格和结构，只改必要的地方"""
+
+def fix_code(llm, problem, code, language, verdict, detail, on_event=None):
+    """分析错误代码，直接输出修复后的完整代码（SSE 流式）。"""
+    user = f"""【题目】{problem['title']}（{problem.get('difficulty', '')}）
+
+【判题结果】{verdict}
+{detail or ''}
+
+【考生代码（{language}）】
+```{language}
+{code[:6000]}
+```
+
+请直接给出修复后的代码。"""
+    sys = FIX_SYSTEM.format(verdict=verdict)
+    reply = ""
+    for ev in llm.stream_chat(sys, user, max_tokens=4000):
+        if ev["type"] == "done":
+            reply = ev["content"]
+        elif on_event:
+            on_event(ev["type"], ev["text"])
+    return reply

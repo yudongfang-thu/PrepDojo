@@ -360,7 +360,75 @@ function renderResult(r) {
         return `<tr><td>#${c.idx}</td><td class="verdict-${c.verdict}">${c.verdict}</td><td>${c.time_ms}ms</td><td class="muted">${det}</td></tr>`;
       }).join("") + "</tbody></table>";
   }
+  // 非 AC 时显示 AI 修复按钮
+  if (r.verdict !== "AC") {
+    html += `<div class="toolbar" style="margin-top:12px"><button class="btn" id="fix-code-btn">🔧 AI 修复</button></div>
+      <div id="fix-result-area" style="margin-top:10px"></div>`;
+  }
   $("result-area").innerHTML = html;
+  // 绑定修复按钮
+  const fb = $("fix-code-btn");
+  if (fb) fb.onclick = () => doFixCode(r);
+}
+
+async function doFixCode(r) {
+  if (!currentProblem) return;
+  const btn = $("fix-code-btn");
+  btn.disabled = true; btn.textContent = "🔧 AI 修复中…";
+  const area = $("fix-result-area");
+  area.innerHTML = "";
+  let reply = "";
+  try {
+    const resp = await fetch("/api/fix/" + currentProblem.id, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: getEditorCode(), language: $("lang-select").value,
+        verdict: r.verdict, detail: (r.compile_error || "").slice(0, 500) }),
+    });
+    if (!resp.ok) {
+      let msg = resp.statusText;
+      try { msg = (await resp.json()).detail || msg; } catch {}
+      throw new Error(msg);
+    }
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder(); let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
+        if (!chunk.startsWith("data: ")) continue;
+        const ev = JSON.parse(chunk.slice(6));
+        if (ev.event === "thinking_delta") {
+          reply += ev.text;
+        } else if (ev.event === "content_delta") {
+          reply += ev.text;
+        } else if (ev.event === "reply") {
+          reply = ev.code || ev.text || "";
+        } else if (ev.event === "error") {
+          area.innerHTML = `<div class="card"><p class="fail-line">${esc(ev.message)}</p></div>`;
+        }
+      }
+    }
+    if (reply) {
+      // 提取代码块
+      const codeMatch = reply.match(/```(?:\w+)?\s*\n([\s\S]*?)```/);
+      const fixedCode = codeMatch ? codeMatch[1].trim() : reply;
+      const description = reply.replace(/```[\s\S]*?```/g, "").trim();
+      area.innerHTML = `<div class="card">
+        <p class="muted">${esc(description).slice(0, 300)}</p>
+        <pre style="background:var(--panel2);border-radius:8px;padding:12px;overflow:auto;max-height:400px;font-size:13px;line-height:1.65">${esc(fixedCode)}</pre>
+        <div class="toolbar" style="margin-top:8px">
+          <button class="btn primary" id="apply-fix-btn">✅ 应用修复（替换编辑器内容）</button>
+        </div></div>`;
+      $("apply-fix-btn").onclick = () => { setEditorCode(fixedCode, $("lang-select").value); area.innerHTML = ""; };
+    }
+  } catch (e) {
+    area.innerHTML = `<div class="card"><p class="fail-line">${esc(e.message)}</p></div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = "🔧 AI 修复";
+  }
 }
 
 // ---------- AI 判题（工具增强判定报告，SSE 流式） ----------

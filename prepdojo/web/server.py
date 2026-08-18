@@ -769,6 +769,56 @@ def create_app(cfg: Config, db: DB, multiuser: bool = False) -> FastAPI:
         result["reasoning"] = out["reasoning"]
         return result
 
+    # ---------- AI 修复代码（直接给修复后代码，不引导） ----------
+
+    @app.post("/api/fix/{pid}")
+    async def fix_code_endpoint(pid: str, body: dict, user: dict = Depends(require_user)):
+        problem = db.get_problem(pid)
+        if not problem:
+            raise HTTPException(404, "题目不存在")
+        llm = _user_llm(user)
+        if llm is None:
+            raise HTTPException(503, _LLM_HINT)
+        from ..chat import fix_code
+
+        code = body.get("code") or ""
+        language = body.get("language", "python")
+        verdict = body.get("verdict", "")
+        detail = body.get("detail", "")
+
+        import asyncio, queue as _q
+        loop = asyncio.get_event_loop()
+
+        async def gen():
+            q = _q.Queue()
+
+            def on_event(kind, text):
+                q.put((kind, text))
+
+            def run():
+                try:
+                    reply = fix_code(llm, problem, code, language, verdict, detail, on_event=on_event)
+                    q.put(("done", reply))
+                except Exception as e:
+                    q.put(("error", str(e)[:300]))
+
+            task = loop.run_in_executor(None, run)
+            while True:
+                item = await loop.run_in_executor(None, q.get)
+                if item[0] == "done":
+                    yield "data: " + json.dumps({"event": "reply", "code": item[1]}, ensure_ascii=False) + "\n\n"
+                    break
+                elif item[0] == "error":
+                    yield "data: " + json.dumps({"event": "error", "message": item[1]}, ensure_ascii=False) + "\n\n"
+                    break
+                else:
+                    yield "data: " + json.dumps({"event": item[0], "text": item[1]}, ensure_ascii=False) + "\n\n"
+            await task
+
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
     # ---------- AI 判题（工具增强的结构化判定报告，SSE） ----------
 
     @app.post("/api/ai_judge/{pid}")
