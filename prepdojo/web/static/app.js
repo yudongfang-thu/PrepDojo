@@ -1462,9 +1462,9 @@ $("logout-btn").onclick = async () => {
     } else {
       const [c1, c2, c3] = getCols();
       if (!c1 || !c2 || !c3) return;
-      const gap = 4;
-      if (Math.abs(e.clientX - c1.right) < gap) { grid.style.cursor = 'col-resize'; grid._dragIdx = 0; }
-      else if (Math.abs(e.clientX - c2.right) < gap) { grid.style.cursor = 'col-resize'; grid._dragIdx = 1; }
+      // 检测鼠标是否在列缝隙区域（gap 约 16px，取缝隙前后各 2px 扩大可拖区域）
+      if (e.clientX >= c1.right - 2 && e.clientX <= c2.left + 2) { grid.style.cursor = 'col-resize'; grid._dragIdx = 0; }
+      else if (e.clientX >= c2.right - 2 && e.clientX <= c3.left + 2) { grid.style.cursor = 'col-resize'; grid._dragIdx = 1; }
       else { grid.style.cursor = ''; }
     }
   });
