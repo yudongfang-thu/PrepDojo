@@ -81,11 +81,13 @@ class LLMClient:
     def stream_chat(
         self, system: str, user: str, max_tokens: int = 3000,
         tools: Optional[list] = None, _messages_override: Optional[list] = None,
+        total_timeout: float = 0,
     ):
         """生成器：yield {"type": "reasoning_delta"|"content_delta"|"done", ...}。
 
         done 事件携带完整 content、reasoning 与聚合后的 tool_calls。
         _messages_override：内部使用（工具循环传完整消息历史）。
+        total_timeout：总超时秒数，0=不限。超时后 yield error 事件并停止。
         """
         messages = _messages_override or [
             {"role": "system", "content": system},
@@ -105,6 +107,8 @@ class LLMClient:
         reasoning_parts: list[str] = []
         tool_calls_acc: dict[int, dict] = {}
         try:
+            import time as _time
+            t_start = _time.monotonic()
             with httpx.stream("POST", f"{self.base_url}/chat/completions",
                               json=payload, headers=headers,
                               timeout=self.timeout) as resp:
@@ -116,6 +120,9 @@ class LLMClient:
                     body = resp.read().decode(errors="replace")[:300]
                     raise LLMError(f"API 错误 {resp.status_code}: {body}")
                 for line in resp.iter_lines():
+                    if total_timeout > 0 and _time.monotonic() - t_start > total_timeout:
+                        yield {"type": "error", "message": f"AI 响应超时（>{total_timeout:.0f}秒），请重试或简化输入"}
+                        return
                     if not line.startswith("data:"):
                         continue
                     data = line[len("data:"):].strip()

@@ -319,9 +319,11 @@ def fix_code(llm, problem, code, language, verdict, detail, on_event=None):
 请直接给出修复后的代码。"""
     sys = FIX_SYSTEM.format(verdict=verdict)
     reply = ""
-    for ev in llm.stream_chat(sys, user, max_tokens=32000):
+    for ev in llm.stream_chat(sys, user, max_tokens=32000, total_timeout=120):
         if ev["type"] == "done":
             reply = ev["content"]
+        elif ev["type"] == "error":
+            return "⚠️ " + ev.get("message", "AI 响应超时，请重试")
         elif on_event:
             on_event(ev["type"], ev["text"])
     if not reply or not reply.strip():
