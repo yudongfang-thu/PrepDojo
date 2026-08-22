@@ -18,15 +18,13 @@ htmlcov/
 
 # ===== 用户数据红线：知识库与练习记录永不入库 =====
 data/
-!data/.gitkeep
 *.db
 *.sqlite3
 .env
+.env.*
 
 # 判题临时产物
 tmp/judge/
 
 # ZCode 本地会话产物
-.zcode/
-.zcode/
 .zcode/

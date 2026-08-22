@@ -196,7 +196,7 @@ li.CodeMirror-hint-active.hint-kw { color: #fff; }
   <section id="page-login" class="hidden">
     <div class="card" style="max-width:380px;margin:10vh auto 0;text-align:center">
       <h2 class="sec" style="text-align:center">PrepDojo · 实验室内测</h2>
-      <p class="muted" style="font-size:13px;margin:6px 0 12px">练习进度按人隔离 · 可自助注册</p>
+      <p class="muted" style="font-size:13px;margin:6px 0 12px">练习进度按账号隔离 · 内容保存在本服务的部署服务器</p>
       <div style="display:flex;gap:4px;margin-bottom:12px">
         <button class="btn primary" id="auth-tab-login" style="flex:1;padding:7px">登 录</button>
         <button class="btn" id="auth-tab-register" style="flex:1;padding:7px">注 册</button>
@@ -219,7 +219,7 @@ li.CodeMirror-hint-active.hint-kw { color: #fff; }
       <h1 style="margin:6px 0 8px;font-size:26px">AI 驱动刷题训练场</h1>
       <p class="muted" style="margin:0;font-size:15px">
         代码题与八股两大训练：AI 能<span style="color:var(--accent)">亲自运行你的代码</span>验证后再判定讲解，
-        八股题卡来自<span style="color:var(--accent)">你自己的资料</span>；数据只留在本机。</p>
+        八股题卡来自<span style="color:var(--accent)">你自己的资料</span>；<span id="privacy-copy">题目、代码与练习记录只保存在这台电脑。</span></p>
       <div class="hero-stats" id="hero-stats"></div>
     </div>
 
@@ -494,11 +494,11 @@ li.CodeMirror-hint-active.hint-kw { color: #fff; }
 
   <!-- 设置 -->
   <section id="page-settings" class="hidden">
-    <!-- 个人 API Key（多用户模式所有成员可见） -->
-    <div class="card" id="card-mykey" style="max-width:640px;margin-bottom:16px">
+    <!-- 个人 API Key（仅多用户模式显示，JS 根据 /api/me 显式开启） -->
+    <div class="card hidden" id="card-mykey" style="max-width:640px;margin-bottom:16px">
       <h2 class="sec">我的 API Key（可选）</h2>
-      <p class="muted" style="font-size:13px">不填则使用服务器共享 Key（由管理员配置，费用站长出）；
-        填了自己的 Key 则 AI 功能走你自己的额度。<span id="mykey-status"></span></p>
+      <p class="muted" style="font-size:13px">不填则使用服务器共享 Key；填入后 AI 请求使用你的额度。
+        个人 Key 会保存在本服务的部署服务器，请仅在你信任该部署的情况下使用。<span id="mykey-status"></span></p>
       <div class="toolbar">
         <input id="mykey-input" type="password" placeholder="sk-...（留空提交 = 恢复使用服务器 Key）"
           style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px">
@@ -539,7 +539,7 @@ li.CodeMirror-hint-active.hint-kw { color: #fff; }
       </thead><tbody></tbody></table>
       <div class="toolbar" style="margin-top:12px">
         <input id="au-name" placeholder="新用户名" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px">
-        <input id="au-pass" type="password" placeholder="初始密码（≥4 位）" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px">
+        <input id="au-pass" type="password" placeholder="初始密码（≥8 位）" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:14px">
         <label style="font-size:13px;color:var(--muted);display:flex;align-items:center;gap:4px">
           <input type="checkbox" id="au-admin">管理员
         </label>

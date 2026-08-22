@@ -8,10 +8,14 @@
 from __future__ import annotations
 
 import re
+import heapq
 from dataclasses import dataclass, field
 from pathlib import Path
 
 SUPPORTED_EXT = {".pdf", ".md", ".markdown", ".txt"}
+MAX_SOURCE_FILE_BYTES = 20 << 20
+MAX_EXTRACTED_CHARS = 2_000_000
+MAX_QA_BLOCKS = 1000
 
 
 class ExtractError(Exception):
@@ -30,20 +34,30 @@ class QABlock:
         return len(self.raw)
 
 
-def iter_source_files(root: Path) -> list[Path]:
-    out = []
-    for p in sorted(root.rglob("*")):
-        if p.is_file() and p.suffix.lower() in SUPPORTED_EXT and not p.name.startswith("."):
-            out.append(p)
-    return out
+def iter_source_files(root: Path, limit: int = 1000) -> list[Path]:
+    """有界枚举来源文件；heap 只保留前 ``limit`` 个路径。"""
+    candidates = (
+        p for p in root.rglob("*")
+        if p.is_file() and p.suffix.lower() in SUPPORTED_EXT and not p.name.startswith(".")
+    )
+    return heapq.nsmallest(max(0, limit), candidates, key=lambda p: str(p))
 
 
 def extract_text(path: Path) -> str:
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise ExtractError(f"无法读取文件信息: {exc}") from exc
+    if size > MAX_SOURCE_FILE_BYTES:
+        raise ExtractError(f"文件超过 {MAX_SOURCE_FILE_BYTES >> 20}MB 上限")
     suf = path.suffix.lower()
     if suf == ".pdf":
         return _extract_pdf(path)
     if suf in {".md", ".markdown", ".txt"}:
-        return path.read_text(encoding="utf-8", errors="ignore")
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        if len(text) > MAX_EXTRACTED_CHARS:
+            raise ExtractError(f"抽取文本超过 {MAX_EXTRACTED_CHARS} 字符上限")
+        return text
     raise ExtractError(f"不支持的格式: {path.suffix}")
 
 
@@ -54,7 +68,16 @@ def _extract_pdf(path: Path) -> str:
         raise ExtractError("需要 pypdf：pip install pypdf") from e
     try:
         reader = PdfReader(str(path))
-        pages = [(pg.extract_text() or "") for pg in reader.pages]
+        pages = []
+        total = 0
+        for pg in reader.pages:
+            page = pg.extract_text() or ""
+            total += len(page)
+            if total > MAX_EXTRACTED_CHARS:
+                raise ExtractError(f"抽取文本超过 {MAX_EXTRACTED_CHARS} 字符上限")
+            pages.append(page)
+    except ExtractError:
+        raise
     except Exception as e:
         raise ExtractError(f"PDF 解析失败: {e}") from e
     text = "\n".join(pages).strip()
@@ -95,6 +118,8 @@ def _clean_line(line: str) -> str:
 
 
 def chunk_qa(text: str, source_name: str = "", max_fallback_chars: int = 1600) -> list[QABlock]:
+    if not isinstance(text, str) or len(text) > MAX_EXTRACTED_CHARS:
+        raise ExtractError(f"待分块文本超过 {MAX_EXTRACTED_CHARS} 字符上限")
     lines = [_clean_line(l) for l in text.splitlines()]
     blocks: list[QABlock] = []
     cur_q: str | None = None
@@ -113,6 +138,8 @@ def chunk_qa(text: str, source_name: str = "", max_fallback_chars: int = 1600) -
                     locator=f"Q: {cur_q[:60]}",
                 )
             )
+            if len(blocks) > MAX_QA_BLOCKS:
+                raise ExtractError(f"单文件材料块超过 {MAX_QA_BLOCKS} 个上限")
         cur_q, cur_a = None, []
 
     for line in lines:
@@ -140,4 +167,6 @@ def chunk_qa(text: str, source_name: str = "", max_fallback_chars: int = 1600) -
                         locator=f"段落在偏移 {i}",
                     )
                 )
+                if len(blocks) > MAX_QA_BLOCKS:
+                    raise ExtractError(f"单文件材料块超过 {MAX_QA_BLOCKS} 个上限")
     return blocks

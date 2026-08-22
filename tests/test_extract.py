@@ -3,9 +3,17 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from prepdojo.extract import chunk_qa, extract_text  # noqa: E402
+from prepdojo.extract import (  # noqa: E402
+    MAX_QA_BLOCKS,
+    MAX_SOURCE_FILE_BYTES,
+    ExtractError,
+    chunk_qa,
+    extract_text,
+)
 
 SAMPLE = """大模型基础面试
 来自：某八股资料
@@ -58,3 +66,18 @@ def test_extract_real_pdf_if_exists():
     assert len(text) > 100
     blocks = chunk_qa(text, source_name=pdfs[0].stem)
     assert blocks, "真实 PDF 应能分出 Q&A 块"
+
+
+def test_extract_rejects_oversized_file_before_reading(tmp_path):
+    path = tmp_path / "huge.txt"
+    with path.open("wb") as stream:
+        stream.truncate(MAX_SOURCE_FILE_BYTES + 1)
+    with pytest.raises(ExtractError, match="文件超过"):
+        extract_text(path)
+
+
+def test_chunk_count_is_bounded():
+    text = "\n".join(
+        f"Q: 问题{i}？\n答案{i}" for i in range(MAX_QA_BLOCKS + 1))
+    with pytest.raises(ExtractError, match="材料块超过"):
+        chunk_qa(text)

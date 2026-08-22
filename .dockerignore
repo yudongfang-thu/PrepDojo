@@ -1,0 +1,7 @@
+# 判题镜像不 COPY 仓库内容：build context 只允许 Dockerfile 本身。
+# 这会排除 data、.venv、.git、备份、日志以及未来新增的本地文件。
+**
+!deploy/
+deploy/*
+!deploy/Dockerfile.judge
+!.dockerignore

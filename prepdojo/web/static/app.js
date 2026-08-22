@@ -18,7 +18,15 @@ function showLogin(msg) {
 function applyUserUI() {
   document.querySelector("header nav").style.display = "flex"; // 登录后恢复菜单
   const u = currentUser;
-  if (!u || !u.multiuser) return; // 单机模式：不显示用户相关 UI
+  const multiuser = !!(u && u.multiuser);
+  $("card-mykey").classList.toggle("hidden", !multiuser);
+  const privacy = $("privacy-copy");
+  if (privacy) {
+    privacy.textContent = multiuser
+      ? "练习进度按账号隔离；题目、代码与记录保存在本服务的部署服务器。"
+      : "题目、代码与练习记录只保存在这台电脑。";
+  }
+  if (!multiuser) return; // 单机模式：不显示用户相关 UI
   $("user-badge").textContent = u.username + (u.is_admin ? " · 管理员" : "");
   $("logout-btn").classList.remove("hidden");
   if (!u.is_admin) $("nav-kb").classList.add("hidden"); // 知识库管理仅管理员
@@ -34,8 +42,78 @@ const api = async (path, opts) => {
   }
   return r.json();
 };
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({
-  "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+// 所有服务端/LLM 字段都按不可信输入处理。动态内容优先通过 textContent 写入；
+// CSS 类名仅从下列白名单生成，避免把题目 id、难度、判定等拼进 HTML。
+const asObject = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+const asArray = (v) => Array.isArray(v) ? v : [];
+const displayText = (v, fallback = "") => {
+  if (v === null || v === undefined) return fallback;
+  if (["string", "number", "boolean"].includes(typeof v)) return String(v);
+  return fallback;
+};
+const finiteText = (v, fallback = "—") => {
+  if ((typeof v !== "number" && typeof v !== "string") || (typeof v === "string" && !v.trim())) return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? String(n) : fallback;
+};
+const scoreText = (v) => {
+  if ((typeof v !== "number" && typeof v !== "string") || (typeof v === "string" && !v.trim())) return "—";
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 && n <= 10 ? String(n) : "—";
+};
+const DIFFICULTIES = {
+  easy: { cls: "easy", label: "简单" },
+  medium: { cls: "medium", label: "中等" },
+  hard: { cls: "hard", label: "困难" },
+};
+const VERDICTS = new Set(["AC", "WA", "TLE", "MLE", "RE", "CE"]);
+const safeLanguage = (value, fallback = "python") =>
+  ["python", "cpp"].includes(displayText(value)) ? displayText(value) : fallback;
+function difficultyInfo(value) {
+  return DIFFICULTIES[displayText(value)] || { cls: "", label: "未知" };
+}
+function verdictInfo(value) {
+  const candidate = displayText(value).toUpperCase();
+  const text = VERDICTS.has(candidate) ? candidate : "UNKNOWN";
+  return { text, cls: VERDICTS.has(text) ? `verdict-${text}` : "muted" };
+}
+function makeEl(tag, { className = "", text = "", title = "" } = {}) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (title) node.title = title;
+  node.textContent = displayText(text);
+  return node;
+}
+function addBadge(parent, value, kind = "tag") {
+  const info = kind === "difficulty" ? difficultyInfo(value) : null;
+  const badge = makeEl("span", {
+    className: `badge${info && info.cls ? ` ${info.cls}` : kind === "tag" ? " tag" : ""}`,
+    text: info ? info.label : value,
+  });
+  parent.appendChild(badge);
+  return badge;
+}
+function appendMessage(parent, text, cls) {
+  const div = makeEl("div", { className: `coach-msg ${cls}`, text });
+  parent.appendChild(div);
+  return div;
+}
+function parseSseEvent(chunk) {
+  if (!chunk.startsWith("data: ")) return null;
+  try {
+    const value = JSON.parse(chunk.slice(6));
+    return asObject(value);
+  } catch {
+    return null;
+  }
+}
+function toolStartText(event, maxLength = 50) {
+  const ev = asObject(event);
+  const args = asObject(ev.args);
+  const rawArg = args.code ?? args.problem_id ?? "";
+  const preview = displayText(rawArg).slice(0, maxLength).replace(/\n/g, "⏎");
+  return `⚙️ ${displayText(ev.name, "工具").slice(0, 40)}(${preview}${preview ? "…" : ""})`;
+}
 
 // ---------- 编辑器（CodeMirror 优先，降级 textarea） ----------
 let cm = null, fallbackTA = null;
@@ -89,7 +167,7 @@ function mergedHint(cmr) {
 let _hintTimer = null;
 function initEditor() {
   const holder = $("editor-holder");
-  holder.innerHTML = "";
+  holder.replaceChildren();
   if (typeof CodeMirror !== "undefined") {
     cm = CodeMirror(holder, {
       value: "", mode: "python", theme: "material-darker",
@@ -205,10 +283,15 @@ async function loadHeroStats() {
       [s.learned_cards, "已学习"],
       [s.problems, "代码题"],
       [`${ac}`, "已攻克"],
-      [h.llm_ready ? "已就绪" : "未配置", "AI（" + (h.model || "判题可用") + "）"],
+      [h.llm_ready ? "已就绪" : "未配置", "AI（判题始终可用）"],
     ];
-    $("hero-stats").innerHTML = items.map(([v, k]) =>
-      `<div class="hs"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join("");
+    const holder = $("hero-stats");
+    holder.replaceChildren();
+    for (const [v, k] of items) {
+      const item = makeEl("div", { className: "hs" });
+      item.append(makeEl("b", { text: v }), makeEl("span", { text: k }));
+      holder.appendChild(item);
+    }
   } catch {}
 }
 
@@ -226,7 +309,7 @@ async function refreshBadge() {
   try {
     const h = await api("/api/health");
     const b = $("llm-badge");
-    if (h.llm_ready) { b.textContent = `● AI 已就绪（${h.model}）`; b.className = "on"; }
+    if (h.llm_ready) { b.textContent = "● AI 已就绪"; b.className = "on"; }
     else { b.textContent = "○ AI 未配置（判题可用）"; b.className = ""; }
   } catch {}
 }
@@ -236,25 +319,41 @@ let problems = [], currentProblem = null, lastSubmission = null;
 
 async function loadProblems() {
   const d = await api("/api/problems");
-  problems = d.problems;
+  problems = asArray(asObject(d).problems).map(asObject);
   const tb = $("problem-table").querySelector("tbody");
-  tb.innerHTML = problems.map(p => {
-    const st = p.ever_ac ? '<span title="已攻克">✅</span>'
-      : (p.attempts > 0 ? `<span title="未通过（${p.attempts} 次提交）">❌</span>` : '<span class="muted" title="没做过">⬜</span>');
-    return `
-    <tr class="problem-row" data-id="${p.id}">
-      <td>${st}</td>
-      <td class="muted">${p.id}</td>
-      <td>${esc(p.title)}</td>
-      <td><span class="badge ${p.difficulty}">${{easy:"简单",medium:"中等",hard:"困难"}[p.difficulty]||p.difficulty}</span></td>
-      <td>${p.tags.map(t => `<span class="badge tag">${esc(t)}</span>`).join("")}</td>
-      <td class="muted">${p.n_cases}</td>
-      <td>${(p.id.startsWith("cpg-") && currentUser && currentUser.is_admin) ? `<button class="btn" style="padding:2px 8px;font-size:11px" onclick="delProblem('${p.id}')">删除</button>` : ""}</td>
-    </tr>`;
-  }).join("");
-  tb.querySelectorAll(".problem-row").forEach(tr => {
-    tr.onclick = () => openProblem(tr.dataset.id);
-  });
+  tb.replaceChildren();
+  for (const p of problems) {
+    const pid = displayText(p.id);
+    const attempts = Number.isFinite(Number(p.attempts)) ? Number(p.attempts) : 0;
+    const tr = makeEl("tr", { className: "problem-row" });
+    tr.dataset.id = pid;
+    const statusCell = makeEl("td");
+    statusCell.appendChild(p.ever_ac
+      ? makeEl("span", { text: "✅", title: "已攻克" })
+      : attempts > 0
+        ? makeEl("span", { text: "❌", title: `未通过（${attempts} 次提交）` })
+        : makeEl("span", { className: "muted", text: "⬜", title: "没做过" }));
+    const idCell = makeEl("td", { className: "muted", text: pid });
+    const titleCell = makeEl("td", { text: p.title });
+    const difficultyCell = makeEl("td");
+    addBadge(difficultyCell, p.difficulty, "difficulty");
+    const tagsCell = makeEl("td");
+    asArray(p.tags).forEach(tag => addBadge(tagsCell, tag));
+    const countCell = makeEl("td", { className: "muted", text: finiteText(p.n_cases) });
+    const actionCell = makeEl("td");
+    if (pid.startsWith("cpg-") && currentUser && currentUser.is_admin) {
+      const del = makeEl("button", { className: "btn", text: "删除" });
+      del.style.cssText = "padding:2px 8px;font-size:11px";
+      del.addEventListener("click", event => {
+        event.stopPropagation();
+        delProblem(pid);
+      });
+      actionCell.appendChild(del);
+    }
+    tr.append(statusCell, idCell, titleCell, difficultyCell, tagsCell, countCell, actionCell);
+    tr.addEventListener("click", () => openProblem(pid));
+    tb.appendChild(tr);
+  }
   const ac = problems.filter(p => p.ever_ac).length;
   const tried = problems.filter(p => p.attempts > 0).length;
   $("problem-stat-brief").textContent =
@@ -263,27 +362,30 @@ async function loadProblems() {
 
 $("wrong-drill-btn").onclick = async () => {
   const d = await api("/api/problems/wrong");
-  if (!d.wrong.length) return alert("错题本是空的——提交过但未 AC 的题才会进错题本。");
-  const pick = d.wrong[Math.floor(Math.random() * d.wrong.length)];
-  openProblem(pick.id);
+  const wrong = asArray(asObject(d).wrong).map(asObject);
+  if (!wrong.length) return alert("错题本是空的——提交过但未 AC 的题才会进错题本。");
+  const pick = wrong[Math.floor(Math.random() * wrong.length)];
+  openProblem(displayText(pick.id));
 };
 
 async function openProblem(pid) {
-  currentProblem = await api("/api/problems/" + pid);
+  currentProblem = asObject(await api("/api/problems/" + encodeURIComponent(displayText(pid))));
   if (cm) setTimeout(() => cm.refresh(), 0);
   $("problem-list-view").classList.add("hidden");
   $("problem-detail-view").classList.remove("hidden");
-  $("pd-title").textContent = `${currentProblem.id} · ${currentProblem.title}`;
-  $("pd-badges").innerHTML =
-    `<span class="badge ${currentProblem.difficulty}">${{easy:"简单",medium:"中等",hard:"困难"}[currentProblem.difficulty]||currentProblem.difficulty}</span>` +
-    currentProblem.tags.map(t => `<span class="badge tag">${esc(t)}</span>`).join("");
-  let st = currentProblem.statement;
-  if (currentProblem.samples && currentProblem.samples.length) {
+  $("pd-title").textContent = `${displayText(currentProblem.id)} · ${displayText(currentProblem.title)}`;
+  const badges = $("pd-badges");
+  badges.replaceChildren();
+  addBadge(badges, currentProblem.difficulty, "difficulty");
+  asArray(currentProblem.tags).forEach(tag => addBadge(badges, tag));
+  let st = displayText(currentProblem.statement);
+  const samples = asArray(currentProblem.samples).map(asObject);
+  if (samples.length) {
     st += "\n\n【样例】\n" +
-      currentProblem.samples.map(s =>
-        `输入：\n${s.input}\n输出：\n${s.output}`).join("\n\n");
+      samples.map(s =>
+        `输入：\n${displayText(s.input)}\n输出：\n${displayText(s.output)}`).join("\n\n");
   }
-  st += `\n\n（共 ${currentProblem.n_cases} 组测试用例；时限 ${currentProblem.time_limit_ms}ms）`;
+  st += `\n\n（共 ${finiteText(currentProblem.n_cases)} 组测试用例；时限 ${finiteText(currentProblem.time_limit_ms)}ms）`;
   $("statement").textContent = st;
   const lang = $("lang-select").value;
   // 草稿优先 → 无草稿时从提交记录不限语言恢复 → 都没有才用模板
@@ -292,24 +394,27 @@ async function openProblem(pid) {
     setEditorCode(draft, lang);
   } else {
     setEditorCode(TEMPLATES[lang], lang); // 先设模板，再异步恢复
-    api("/api/submissions/last/" + currentProblem.id)  // 不限语言，取最近一次提交
+    api("/api/submissions/last/" + encodeURIComponent(displayText(currentProblem.id)))  // 不限语言，取最近一次提交
       .then(r => {
-        if (r && r.code && r.code.trim()) {
+        const last = asObject(r);
+        const code = displayText(last.code);
+        if (code.trim()) {
           // 如果上次提交的语言和当前不同，自动切换下拉
-          if (r.language && r.language !== lang) {
-            $("lang-select").value = r.language;
+          const savedLanguage = safeLanguage(last.language, lang);
+          if (savedLanguage !== lang) {
+            $("lang-select").value = savedLanguage;
           }
-          setEditorCode(r.code, r.language || lang);
+          setEditorCode(code, savedLanguage);
         }
       })
       .catch(() => {});
   }
   saveDraft();
-  $("result-area").innerHTML = "";
+  $("result-area").replaceChildren();
   lastSubmission = null;
   coachHistory = [];
   const coachMsgs = $("coach-messages");
-  if (coachMsgs) coachMsgs.innerHTML = "";
+  if (coachMsgs) coachMsgs.replaceChildren();
 }
 
 $("back-btn").onclick = () => {
@@ -338,8 +443,11 @@ $("lang-select").onchange = () => {
     // 模板未修改：尝试从提交记录恢复该语言的代码
     setEditorCode(TEMPLATES[lang], lang);
     if (currentProblem) {
-      api("/api/submissions/last/" + currentProblem.id + "?language=" + lang)
-        .then(r => { if (r && r.code && r.code.trim()) setEditorCode(r.code, lang); })
+      api("/api/submissions/last/" + encodeURIComponent(displayText(currentProblem.id)) + "?language=" + encodeURIComponent(lang))
+        .then(r => {
+          const code = displayText(asObject(r).code);
+          if (code.trim()) setEditorCode(code, lang);
+        })
         .catch(() => {});
     }
   } else if (currentProblem) {
@@ -357,7 +465,7 @@ $("submit-btn").onclick = async () => {
   if (!code.trim()) return alert("代码为空");
   const btn = $("submit-btn");
   btn.disabled = true; btn.textContent = "判题中…";
-  $("result-area").innerHTML = '<p class="muted">沙箱运行中…</p>';
+  $("result-area").replaceChildren(makeEl("p", { className: "muted", text: "沙箱运行中…" }));
   try {
     const r = await api("/api/submit", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -367,29 +475,67 @@ $("submit-btn").onclick = async () => {
     lastSubmission = r;
     renderResult(r);
   } catch (e) {
-    $("result-area").innerHTML = `<p class="verdict-RE">提交失败：${esc(e.message)}</p>`;
+    $("result-area").replaceChildren(
+      makeEl("p", { className: "verdict-RE", text: "提交失败：" + displayText(e.message, "未知错误") }));
   } finally {
     btn.disabled = false; btn.textContent = "提交判题";
   }
 };
 
 function renderResult(r) {
-  const v = `<span class="verdict-${r.verdict}">${r.verdict}</span>`;
-  let html = `<p style="font-size:15px">判定：${v} · 最慢用例 ${r.max_time_ms}ms</p>`;
-  if (r.compile_error) {
-    html += `<p class="muted">编译错误：</p><pre>${esc(r.compile_error)}</pre>`;
+  r = asObject(r);
+  const verdict = verdictInfo(r.verdict);
+  const area = $("result-area");
+  area.replaceChildren();
+  const summary = makeEl("p");
+  summary.style.fontSize = "15px";
+  summary.append(document.createTextNode("判定："));
+  summary.appendChild(makeEl("span", { className: verdict.cls, text: verdict.text }));
+  summary.append(document.createTextNode(` · 最慢用例 ${finiteText(r.max_time_ms)}ms`));
+  area.appendChild(summary);
+
+  const compileError = displayText(r.compile_error);
+  if (compileError) {
+    area.append(makeEl("p", { className: "muted", text: "编译错误：" }),
+      makeEl("pre", { text: compileError }));
   } else {
-    html += "<table><thead><tr><th>用例</th><th>结果</th><th>耗时</th><th>详情</th></tr></thead><tbody>" +
-      r.cases.map(c => {
-        let det = "";
-        if (c.verdict === "WA") det = `期望 ${esc(c.expected)} / 实际 ${esc(c.stdout)}`;
-        else if (c.verdict === "RE") det = esc(c.stderr).slice(0, 200);
-        return `<tr><td>#${c.idx}</td><td class="verdict-${c.verdict}">${c.verdict}</td><td>${c.time_ms}ms</td><td class="muted">${det}</td></tr>`;
-      }).join("") + "</tbody></table>";
+    const cases = asArray(r.cases).map(asObject);
+    if (!cases.length) {
+      area.appendChild(makeEl("p", { className: "muted", text: "后端未返回逐用例详情。" }));
+    } else {
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const header = document.createElement("tr");
+      ["用例", "结果", "耗时", "详情"].forEach(text => header.appendChild(makeEl("th", { text })));
+      thead.appendChild(header);
+      const tbody = document.createElement("tbody");
+      cases.forEach((c, index) => {
+        const cv = verdictInfo(c.verdict);
+        let detail = displayText(c.detail);
+        if (!detail && cv.text === "WA") {
+          const hasExpected = c.expected !== undefined && c.expected !== null;
+          const hasStdout = c.stdout !== undefined && c.stdout !== null;
+          detail = hasExpected || hasStdout
+            ? `期望 ${displayText(c.expected, "—")} / 实际 ${displayText(c.stdout, "—")}`
+            : "隐藏用例未通过（详情未公开）";
+        } else if (!detail && cv.text === "RE") {
+          detail = displayText(c.stderr).slice(0, 200) || "运行时错误（详情未公开）";
+        }
+        const row = document.createElement("tr");
+        row.append(
+          makeEl("td", { text: `#${finiteText(c.idx, String(index + 1))}` }),
+          makeEl("td", { className: cv.cls, text: cv.text }),
+          makeEl("td", { text: `${finiteText(c.time_ms)}ms` }),
+          makeEl("td", { className: "muted", text: detail }),
+        );
+        tbody.appendChild(row);
+      });
+      table.append(thead, tbody);
+      area.appendChild(table);
+    }
   }
-  $("result-area").innerHTML = html;
   // 非 AC 时在教练栏弹修复入口
-  if (r.verdict !== "AC" && currentProblem) {
+  if (verdict.text !== "AC" && currentProblem) {
     setTimeout(() => offerFixInCoach(r), 100);
   }
 }
@@ -398,9 +544,10 @@ let lastFailedResult = null;  // 最近一次非 AC 的判题结果
 let lastFixedCode = null;     // 最近一次 AI 修复的代码
 function offerFixInCoach(r) {
   lastFailedResult = r;
+  const verdict = verdictInfo(asObject(r).verdict).text;
   const btn = $("coach-fix-btn");
-  if (btn) { btn.disabled = false; btn.style.opacity = "1"; btn.textContent = "🔧 修复 " + r.verdict; _fixBtnStyle(btn, ""); }
-  coachRender("tool", `判题结果：<b class="verdict-${r.verdict}">${r.verdict}</b>　可点右上角「🔧 修复」让 AI 改代码`, "tool");
+  if (btn) { btn.disabled = false; btn.style.opacity = "1"; btn.textContent = "🔧 修复 " + verdict; _fixBtnStyle(btn, ""); }
+  coachRender("tool", `判题结果：${verdict}；可点右上角「🔧 修复」让 AI 改代码`, "tool");
 }
 function _fixBtnStyle(btn, bg) { btn.style.background = bg; btn.style.borderColor = bg; btn.style.color = bg ? "#fff" : ""; }
 
@@ -411,10 +558,10 @@ async function doCoachFix(r) {
   let reply = "", assistantDiv = coachRender("assistant", "思考中…", "assistant");
   let thinkBox = null;
   try {
-    const resp = await fetch("/api/fix/" + currentProblem.id, {
+    const resp = await fetch("/api/fix/" + encodeURIComponent(displayText(currentProblem.id)), {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code: getEditorCode(), language: $("lang-select").value,
-        verdict: r.verdict, detail: (r.compile_error || "").slice(0, 500) }),
+        verdict: verdictInfo(r.verdict).text, detail: displayText(r.compile_error).slice(0, 500) }),
     });
     if (!resp.ok) {
       let msg = resp.statusText;
@@ -430,31 +577,39 @@ async function doCoachFix(r) {
       let idx;
       while ((idx = buf.indexOf("\n\n")) >= 0) {
         const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
-        if (!chunk.startsWith("data: ")) continue;
-        const ev = JSON.parse(chunk.slice(6));
+        const ev = parseSseEvent(chunk);
+        if (!ev) continue;
         if (ev.event === "thinking_delta" || ev.event === "reasoning_delta") {
           if (!thinkBox) thinkBox = makeThinkingBox(assistantDiv.parentNode || $("coach-messages"));
           appendThinking(thinkBox, ev.text);
         } else if (ev.event === "content_delta") {
-          reply += ev.text;
-          assistantDiv.textContent = reply;
+          reply += displayText(ev.text);
+          appendStreamingText(assistantDiv, ev.text);
         } else if (ev.event === "reply") {
-          reply = ev.code || ev.text || "";
+          reply = displayText(ev.code) || displayText(ev.text);
         } else if (ev.event === "error") {
-          assistantDiv.textContent = "修复失败：" + ev.message;
+          assistantDiv.textContent = "修复失败：" + displayText(ev.message, "未知错误");
         }
       }
     }
     if (thinkBox) thinkBox.open = false;
     if (reply) {
       if (reply.startsWith("⚠️")) {
-        assistantDiv.innerHTML = `<div class="coach-msg tool" style="color:var(--amber)">${esc(reply)}</div>`;
+        assistantDiv.replaceChildren();
+        assistantDiv.style.color = "var(--amber)";
+        assistantDiv.textContent = reply;
         if (btn) { btn.disabled = false; btn.textContent = "🔧 修复"; btn.style.opacity = "1"; _fixBtnStyle(btn, ""); }
       } else {
         const codeMatch = reply.match(/```(?:\w+)?\s*\n([\s\S]*?)```/);
         lastFixedCode = codeMatch ? codeMatch[1].trim() : reply;
-        assistantDiv.innerHTML = `<div class="coach-msg assistant" style="white-space:pre-wrap">${esc(reply.replace(/```[\s\S]*?```/g, "").trim()).slice(0, 400)}</div>
-          <pre style="background:var(--panel2);border-radius:8px;padding:10px;overflow:auto;max-height:320px;font-size:12.5px;line-height:1.6">${esc(lastFixedCode)}</pre>`;
+        assistantDiv.replaceChildren();
+        const intro = makeEl("div", {
+          text: reply.replace(/```[\s\S]*?```/g, "").trim().slice(0, 400),
+        });
+        intro.style.whiteSpace = "pre-wrap";
+        const code = makeEl("pre", { text: lastFixedCode });
+        code.style.cssText = "background:var(--panel2);border-radius:8px;padding:10px;overflow:auto;max-height:320px;font-size:12.5px;line-height:1.6";
+        assistantDiv.append(intro, code);
         if (btn) { btn.disabled = false; btn.textContent = "✅ 应用修复"; btn.style.opacity = "1"; _fixBtnStyle(btn, "var(--green)"); }
       }
     }
@@ -472,11 +627,17 @@ $("ai-judge-btn").onclick = async () => {
   const btn = $("ai-judge-btn");
   btn.disabled = true; btn.textContent = "🤖 AI 判题中…";
   const area = $("result-area");
-  area.insertAdjacentHTML("beforeend",
-    '<div id="ai-judge-live" class="card" style="margin-top:14px"><b>🤖 AI 判题</b><div class="tool-log"></div></div>');
-  const live = area.querySelector("#ai-judge-live .tool-log");
+  const oldLive = $("ai-judge-live");
+  if (oldLive) oldLive.remove();
+  const wrapper = makeEl("div", { className: "card" });
+  wrapper.id = "ai-judge-live";
+  wrapper.style.marginTop = "14px";
+  wrapper.appendChild(makeEl("b", { text: "🤖 AI 判题" }));
+  const live = makeEl("div", { className: "tool-log" });
+  wrapper.appendChild(live);
+  area.appendChild(wrapper);
   try {
-    const resp = await fetch(`/api/ai_judge/${currentProblem.id}`, {
+    const resp = await fetch(`/api/ai_judge/${encodeURIComponent(displayText(currentProblem.id))}`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code, language: $("lang-select").value,
         last_submission_id: lastSubmission ? lastSubmission.submission_id : null }),
@@ -496,15 +657,12 @@ $("ai-judge-btn").onclick = async () => {
       let idx;
       while ((idx = buf.indexOf("\n\n")) >= 0) {
         const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
-        if (!chunk.startsWith("data: ")) continue;
-        const ev = JSON.parse(chunk.slice(6));
+        const ev = parseSseEvent(chunk);
+        if (!ev) continue;
         if (ev.event === "tool_start") {
-          live.insertAdjacentHTML("beforeend",
-            `<div class="coach-msg tool">⚙️ ${ev.name}(${(ev.args.code || ev.args.problem_id || "")
-              .slice(0, 50).replace(/\n/g, "⏎")}…)</div>`);
+          appendMessage(live, toolStartText(ev), "tool");
         } else if (ev.event === "tool_done") {
-          live.insertAdjacentHTML("beforeend",
-            `<div class="coach-msg tool">✅ ${esc(ev.summary)}</div>`);
+          appendMessage(live, "✅ " + displayText(ev.summary), "tool");
         } else if (ev.event === "thinking_delta") {
           if (!live._think) live._think = makeThinkingBox(live);
           appendThinking(live._think, ev.text);
@@ -512,47 +670,67 @@ $("ai-judge-btn").onclick = async () => {
           // 最终输出是结构化 JSON 报告：不逐 token 展示原文，等 report 事件统一渲染
           if (!live._reporting) {
             live._reporting = true;
-            live.insertAdjacentHTML("beforeend",
-              '<div class="coach-msg tool">📝 正在汇总判定报告…</div>');
+            appendMessage(live, "📝 正在汇总判定报告…", "tool");
           }
         } else if (ev.event === "report") {
           if (live._think) live._think.open = false;
           renderAiJudgeReport(live, ev.report);
         } else if (ev.event === "report_raw") {
-          live.insertAdjacentHTML("beforeend",
-            `<div class="coach-msg assistant">${esc(ev.text)}</div>`);
+          appendMessage(live, displayText(ev.text), "assistant");
         } else if (ev.event === "error") {
-          live.insertAdjacentHTML("beforeend",
-            `<div class="coach-msg tool">❌ ${esc(ev.message)}</div>`);
+          appendMessage(live, "❌ " + displayText(ev.message, "未知错误"), "tool");
         }
       }
     }
   } catch (e) {
-    live.insertAdjacentHTML("beforeend", `<div class="coach-msg tool">❌ ${esc(e.message)}</div>`);
+    appendMessage(live, "❌ " + displayText(e.message, "未知错误"), "tool");
   } finally {
     btn.disabled = false; btn.textContent = "🤖 AI 判题";
   }
 };
 
 function renderAiJudgeReport(container, r) {
-  const bs = r.better_solution || {};
-  container.insertAdjacentHTML("beforeend", `
-    <div class="card" style="margin-top:10px">
-      <p style="font-size:16px"><b>判定：<span class="verdict-${esc(r.sandbox_verdict)}">${esc(r.sandbox_verdict)}</span></b>
-      　<span class="muted">${esc(r.summary || "")}</span></p>
-      <p>复杂度：时间 <b>${esc(r.complexity?.time || "未知")}</b> · 空间 <b>${esc(r.complexity?.space || "未知")}</b></p>
-      <p>🔬 边界分析</p>
-      <div class="per-point">${esc(r.boundary_analysis || "—")}</div>
-      ${bs.exists ? `
-      <p>🚀 更优解法：${esc(bs.name)}（${esc(bs.complexity)}）</p>
-      <div class="per-point hit"><b>为什么更优：</b>${esc(bs.why_better)}<br><b>思路提示：</b>${esc(bs.hint)}</div>` : ""}
-      ${r.related_knowledge && r.related_knowledge.length ? `
-      <p>📚 知识点（更优解法背后）</p>
-      ${r.related_knowledge.map(x=>`<div class="per-point">${esc(x)}</div>`).join("")}` : ""}
-      ${r.interview_tips && r.interview_tips.length ? `
-      <p>🎤 面试官视角</p>
-      ${r.interview_tips.map(x=>`<div class="per-point">${esc(x)}</div>`).join("")}` : ""}
-    </div>`);
+  r = asObject(r);
+  const bs = asObject(r.better_solution);
+  const complexity = asObject(r.complexity);
+  const verdict = verdictInfo(r.sandbox_verdict);
+  const card = makeEl("div", { className: "card" });
+  card.style.marginTop = "10px";
+  const heading = makeEl("p");
+  heading.style.fontSize = "16px";
+  const strong = makeEl("b", { text: "判定：" });
+  strong.appendChild(makeEl("span", { className: verdict.cls, text: verdict.text }));
+  heading.append(strong, document.createTextNode("　"),
+    makeEl("span", { className: "muted", text: r.summary }));
+  card.appendChild(heading);
+
+  const complexityLine = makeEl("p", { text: "复杂度：时间 " });
+  complexityLine.append(makeEl("b", { text: displayText(complexity.time, "未知") }),
+    document.createTextNode(" · 空间 "), makeEl("b", { text: displayText(complexity.space, "未知") }));
+  card.append(complexityLine, makeEl("p", { text: "🔬 边界分析" }),
+    makeEl("div", { className: "per-point", text: displayText(r.boundary_analysis, "—") }));
+
+  if (bs.exists === true) {
+    card.appendChild(makeEl("p", {
+      text: `🚀 更优解法：${displayText(bs.name, "未命名")}（${displayText(bs.complexity, "未知")}）`,
+    }));
+    const better = makeEl("div", { className: "per-point hit" });
+    better.append(makeEl("b", { text: "为什么更优：" }),
+      document.createTextNode(displayText(bs.why_better)), document.createElement("br"),
+      makeEl("b", { text: "思路提示：" }), document.createTextNode(displayText(bs.hint)));
+    card.appendChild(better);
+  }
+  const related = asArray(r.related_knowledge);
+  if (related.length) {
+    card.appendChild(makeEl("p", { text: "📚 知识点（更优解法背后）" }));
+    related.forEach(item => card.appendChild(makeEl("div", { className: "per-point", text: item })));
+  }
+  const tips = asArray(r.interview_tips);
+  if (tips.length) {
+    card.appendChild(makeEl("p", { text: "🎤 面试官视角" }));
+    tips.forEach(item => card.appendChild(makeEl("div", { className: "per-point", text: item })));
+  }
+  container.appendChild(card);
 }
 
 // ---------- AI 讲题教练（SSE 流式 + 沙箱工具轨迹 + thinking 流） ----------
@@ -560,8 +738,8 @@ let coachHistory = [];
 
 function coachRender(role, text, cls) {
   const div = document.createElement("div");
-  div.className = `coach-msg ${cls}`;
-  div.textContent = text;
+  div.className = `coach-msg ${["user", "assistant", "tool"].includes(cls) ? cls : "assistant"}`;
+  div.textContent = displayText(text);
   $("coach-messages").appendChild(div);
   $("coach-messages").scrollTop = 1e9;
   return div;
@@ -571,14 +749,29 @@ function makeThinkingBox(parent) {
   const d = document.createElement("details");
   d.className = "thinking";
   d.open = true; // 导入/判题进行中默认展开，看得到 AI 在干活
-  d.innerHTML = '<summary>🧠 AI thinking…</summary><div class="th-content"></div>';
+  d.append(makeEl("summary", { text: "🧠 AI thinking…" }),
+    makeEl("div", { className: "th-content" }));
   parent.appendChild(d);
   return d;
 }
 function appendThinking(box, text) {
   const tc = box.querySelector(".th-content");
-  tc.textContent += text;
+  if (!tc) return;
+  if (!tc._streamText) {
+    tc._streamText = document.createTextNode("");
+    tc.appendChild(tc._streamText);
+  }
+  tc._streamText.appendData(displayText(text));
   tc.scrollTop = tc.scrollHeight;
+}
+
+function appendStreamingText(node, text) {
+  if (!node._streamText) {
+    node.replaceChildren();
+    node._streamText = document.createTextNode("");
+    node.appendChild(node._streamText);
+  }
+  node._streamText.appendData(displayText(text));
 }
 
 // 教练面板已常驻在右侧列
@@ -595,11 +788,11 @@ async function coachSend() {
   let assistantDiv = coachRender("assistant", "思考中…", "assistant");
   let reply = "";
   try {
-    const resp = await fetch(`/api/chat/problem/${currentProblem.id}`, {
+    const resp = await fetch(`/api/chat/problem/${encodeURIComponent(displayText(currentProblem.id))}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        messages: coachHistory.slice(0, -1),
+        messages: coachHistory,
         code: getEditorCode(),
         language: $("lang-select").value,
         last_submission_id: lastSubmission ? lastSubmission.submission_id : null,
@@ -620,15 +813,14 @@ async function coachSend() {
       let idx;
       while ((idx = buf.indexOf("\n\n")) >= 0) {
         const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
-        if (!chunk.startsWith("data: ")) continue;
-        const ev = JSON.parse(chunk.slice(6));
+        const ev = parseSseEvent(chunk);
+        if (!ev) continue;
         if (ev.event === "tool_start") {
-          coachRender("tool", `⚙️ ${ev.name}(${(ev.args.code || ev.args.problem_id || "")
-            .slice(0, 40).replace(/\n/g, "⏎")}…)`, "tool");
+          coachRender("tool", toolStartText(ev, 40), "tool");
           assistantDiv = coachRender("assistant", "", "assistant");
           reply = "";
         } else if (ev.event === "tool_done") {
-          coachRender("tool", `✅ ${ev.summary}`, "tool");
+          coachRender("tool", "✅ " + displayText(ev.summary), "tool");
         } else if (ev.event === "thinking_delta") {
           if (!assistantDiv._think) {
             const tb = makeThinkingBox(assistantDiv.parentNode || $("coach-messages"));
@@ -636,14 +828,14 @@ async function coachSend() {
           }
           appendThinking(assistantDiv._think, ev.text);
         } else if (ev.event === "content_delta") {
-          reply += ev.text;
-          assistantDiv.textContent = reply;
+          reply += displayText(ev.text);
+          appendStreamingText(assistantDiv, ev.text);
         } else if (ev.event === "reply") {
-          reply = ev.text;
+          reply = displayText(ev.text);
           assistantDiv.textContent = reply;
           if (assistantDiv._think) assistantDiv._think.open = false;
         } else if (ev.event === "error") {
-          assistantDiv.textContent = "出错：" + ev.message;
+          assistantDiv.textContent = "出错：" + displayText(ev.message, "未知错误");
         }
         $("coach-messages").scrollTop = 1e9;
       }
@@ -670,18 +862,29 @@ function renderTagCloud(cloudId, which) {
   const TOP_N = 24;
   const showAll = !!el._showAll;
   const list = showAll ? allTagData.list : allTagData.list.slice(0, TOP_N);
-  el.innerHTML = list.map(([t, n]) =>
-    `<button class="tag-chip ${sel.has(t) ? "on" : ""}" data-tag="${esc(t)}">${esc(t)}<i>${n}</i></button>`).join("")
-    + (allTagData.list.length > TOP_N
-      ? `<button class="tag-chip more">${showAll ? "收起 ▴" : `全部 ${allTagData.list.length} 个 ▾`}</button>` : "");
-  el.querySelectorAll(".tag-chip:not(.more)").forEach(ch =>
-    ch.onclick = () => {
-      const t = ch.dataset.tag;
+  el.replaceChildren();
+  list.forEach(entry => {
+    const pair = asArray(entry);
+    const t = displayText(pair[0]);
+    const chip = makeEl("button", { className: `tag-chip${sel.has(t) ? " on" : ""}`, text: t });
+    chip.appendChild(makeEl("i", { text: finiteText(pair[1], "0") }));
+    chip.addEventListener("click", () => {
       sel.has(t) ? sel.delete(t) : sel.add(t);
       renderTagCloud(cloudId, which);
     });
-  const more = el.querySelector(".tag-chip.more");
-  if (more) more.onclick = () => { el._showAll = !showAll; renderTagCloud(cloudId, which); };
+    el.appendChild(chip);
+  });
+  if (allTagData.list.length > TOP_N) {
+    const more = makeEl("button", {
+      className: "tag-chip more",
+      text: showAll ? "收起 ▴" : `全部 ${allTagData.list.length} 个 ▾`,
+    });
+    more.addEventListener("click", () => {
+      el._showAll = !showAll;
+      renderTagCloud(cloudId, which);
+    });
+    el.appendChild(more);
+  }
 }
 
 // ---------- 八股：模式切换 ----------
@@ -714,26 +917,29 @@ $("learn-start-btn").onclick = async () => {
   const tags = [...tagSel.learn].join(",");
   const n = parseInt($("learn-num").value, 10);
   const d = await api(`/api/cards/learn?tags=${encodeURIComponent(tags)}&n=${n}`);
-  if (!d.cards.length) {
+  const cards = asArray(asObject(d).cards).map(asObject);
+  if (!cards.length) {
     return alert("没有可学的卡：全部学完了（或题库为空，先 ingest）。");
   }
-  learnQueue = d.cards; learnIdx = 0;
+  learnQueue = cards; learnIdx = 0;
   $("learn-session").classList.remove("hidden");
   showLearnCard();
 };
 
 function showLearnCard() {
-  const c = learnQueue[learnIdx];
+  const c = asObject(learnQueue[learnIdx]);
   $("learn-progress-cnt").textContent = `第 ${learnIdx + 1} / ${learnQueue.length} 卡`;
-  $("learn-question").innerHTML =
-    `${c.topic_tags.map(t => `<span class="badge tag">${esc(t)}</span>`).join("")}` +
-    (c.learned ? ` <span class="badge easy">已学</span>` : "") +
-    `<br><br>${esc(c.question)}`;
+  const question = $("learn-question");
+  question.replaceChildren();
+  asArray(c.topic_tags).forEach(tag => addBadge(question, tag));
+  if (c.learned) addBadge(question, "已学", "difficulty").className = "badge easy";
+  question.append(document.createElement("br"), document.createElement("br"),
+    document.createTextNode(displayText(c.question)));
   $("learn-answer").classList.add("hidden");
   $("learn-show-btn").classList.remove("hidden");
   $("learn-done-btn").classList.add("hidden");
   $("learn-later-btn").classList.add("hidden");
-  $("learn-explain-area").innerHTML = "";
+  $("learn-explain-area").replaceChildren();
 }
 
 $("learn-show-btn").onclick = () => {
@@ -742,7 +948,9 @@ $("learn-show-btn").onclick = () => {
   $("learn-show-btn").classList.add("hidden");
   $("learn-done-btn").classList.remove("hidden");
   $("learn-later-btn").classList.remove("hidden");
-  $("learn-points").innerHTML = c.answer_points.map(p => `<div class="per-point">${esc(p)}</div>`).join("");
+  const points = $("learn-points");
+  points.replaceChildren(...asArray(c.answer_points).map(point =>
+    makeEl("div", { className: "per-point", text: point })));
 };
 
 $("learn-explain-btn").onclick = async () => {
@@ -750,18 +958,38 @@ $("learn-explain-btn").onclick = async () => {
   const btn = $("learn-explain-btn");
   btn.disabled = true; btn.textContent = "🧠 讲解生成中…";
   try {
-    const r = await api(`/api/cards/${c.id}/explain`);
-    const e = r.explanation;
-    $("learn-explain-area").innerHTML = `
-      ${r.reasoning ? `<details class="thinking"><summary>🧠 讲解员的思考过程</summary><div class="th-content">${esc(r.reasoning)}</div></details>` : ""}
-      <div class="card" style="margin-top:12px">
-        <p><b>核心：</b>${esc(e.core)}</p>
-        <p style="white-space:pre-wrap">${esc(e.expanded)}</p>
-        ${e.analogy ? `<p>🔗 <b>类比：</b>${esc(e.analogy)}</p>` : ""}
-        ${e.mnemonic ? `<p>📌 <b>记忆锚点：</b>${esc(e.mnemonic)}</p>` : ""}
-        ${e.related && e.related.length ? `<p class="muted">相关：${e.related.map(esc).join(" · ")}</p>` : ""}
-        ${r.cached ? '<p class="muted" style="font-size:11px">（缓存）</p>' : ""}
-      </div>`;
+    const r = asObject(await api(`/api/cards/${encodeURIComponent(displayText(c.id))}/explain`));
+    const e = asObject(r.explanation);
+    const area = $("learn-explain-area");
+    area.replaceChildren();
+    if (displayText(r.reasoning)) {
+      const reasoning = makeEl("details", { className: "thinking" });
+      reasoning.append(makeEl("summary", { text: "🧠 讲解员的思考过程" }),
+        makeEl("div", { className: "th-content", text: r.reasoning }));
+      area.appendChild(reasoning);
+    }
+    const card = makeEl("div", { className: "card" });
+    card.style.marginTop = "12px";
+    const core = makeEl("p");
+    core.append(makeEl("b", { text: "核心：" }), document.createTextNode(displayText(e.core)));
+    const expanded = makeEl("p", { text: e.expanded });
+    expanded.style.whiteSpace = "pre-wrap";
+    card.append(core, expanded);
+    [["analogy", "🔗 类比："], ["mnemonic", "📌 记忆锚点："]].forEach(([key, label]) => {
+      if (displayText(e[key])) {
+        const line = makeEl("p");
+        line.append(makeEl("b", { text: label }), document.createTextNode(displayText(e[key])));
+        card.appendChild(line);
+      }
+    });
+    const related = asArray(e.related).map(item => displayText(item)).filter(Boolean);
+    if (related.length) card.appendChild(makeEl("p", { className: "muted", text: "相关：" + related.join(" · ") }));
+    if (r.cached === true) {
+      const cached = makeEl("p", { className: "muted", text: "（缓存）" });
+      cached.style.fontSize = "11px";
+      card.appendChild(cached);
+    }
+    area.appendChild(card);
   } catch (err) {
     alert("讲解失败：" + err.message);
   } finally {
@@ -772,7 +1000,7 @@ $("learn-explain-btn").onclick = async () => {
 $("learn-done-btn").onclick = async () => {
   const c = learnQueue[learnIdx];
   try {
-    await api(`/api/cards/${c.id}/learn`, {
+    await api(`/api/cards/${encodeURIComponent(displayText(c.id))}/learn`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ learned: true }),
     });
@@ -808,7 +1036,7 @@ let quizQueue = [], quizIdx = 0, quizLastAnswer = "";
 async function loadTags() {
   try {
     const d = await api("/api/tags");
-    allTagData.list = d.tags;
+    allTagData.list = asArray(asObject(d).tags).filter(Array.isArray);
     renderTagCloud("learn-tag-cloud", "learn");
     renderTagCloud("quiz-tag-cloud", "quiz");
   } catch {}
@@ -818,11 +1046,12 @@ $("quiz-start-btn").onclick = async () => {
   const tags = [...tagSel.quiz].join(",");
   const n = parseInt($("quiz-num").value, 10);
   const onlyLearned = $("quiz-only-learned").checked ? 1 : 0;
-  const d = await api(`/api/cards/next?tags=${encodeURIComponent(tags)}&n=${n}&only_learned=${onlyLearned}`);
-  if (!d.cards.length) {
+  const d = asObject(await api(`/api/cards/next?tags=${encodeURIComponent(tags)}&n=${n}&only_learned=${onlyLearned}`));
+  const cards = asArray(d.cards).map(asObject);
+  if (!cards.length) {
     return alert("题库为空：请先用 `prepdojo ingest <知识目录>` 接入你的八股资料");
   }
-  quizQueue = d.cards; quizIdx = 0;
+  quizQueue = cards; quizIdx = 0;
   $("quiz-test-view").querySelector("#quiz-session").classList.remove("hidden");
   if (d.fallback) {
     alert("已学的卡暂时抽不出题，本次从全部卡里抽（学都没学的题分数低是正常的）。");
@@ -831,11 +1060,18 @@ $("quiz-start-btn").onclick = async () => {
 };
 
 function showQuizCard() {
-  const c = quizQueue[quizIdx];
+  const c = asObject(quizQueue[quizIdx]);
   $("quiz-progress").textContent = `第 ${quizIdx + 1} / ${quizQueue.length} 题`;
-  $("quiz-question").innerHTML =
-    `${c.topic_tags.map(t => `<span class="badge tag">${esc(t)}</span>`).join("")}` +
-    `<span class="muted" style="font-size:12px"> 难度${c.difficulty}</span><br><br>${esc(c.question)}`;
+  const question = $("quiz-question");
+  question.replaceChildren();
+  asArray(c.topic_tags).forEach(tag => addBadge(question, tag));
+  const difficulty = makeEl("span", {
+    className: "muted",
+    text: " 难度" + displayText(c.difficulty, "未知"),
+  });
+  difficulty.style.fontSize = "12px";
+  question.append(difficulty, document.createElement("br"), document.createElement("br"),
+    document.createTextNode(displayText(c.question)));
   $("quiz-answer").value = "";
   $("quiz-feedback").classList.add("hidden");
   $("quiz-grade-btn").disabled = false;
@@ -863,30 +1099,67 @@ $("quiz-grade-btn").onclick = async () => {
 };
 
 function renderQuizFeedback(r, c) {
+  r = asObject(r);
+  c = asObject(c);
   const fb = $("quiz-feedback");
   fb.classList.remove("hidden");
-  let html = `
-    ${r.reasoning ? `<details class="thinking"><summary>🧠 面试官的思考过程</summary><div class="th-content">${esc(r.reasoning)}</div></details>` : ""}
-    <div class="card" style="margin-top:14px">
-      <div class="score-big">${r.score}<span class="muted" style="font-size:16px"> / 10</span></div>
-      <p>${esc(r.overall || "")}</p>
-      ${r.per_point ? r.per_point.map(p => `
-        <div class="per-point ${p.covered ? "hit" : "miss"}">${p.covered ? "✅" : "❌"} ${esc(p.point)}
-          <div class="muted">${esc(p.comment || "")}</div></div>`).join("") : ""}
-      ${r.missed && r.missed.length ? `<p>📌 遗漏要点</p>` + r.missed.map(x=>`<div class="per-point miss">${esc(x)}</div>`).join("") : ""}
-      ${r.extra_good && r.extra_good.length ? `<p>🌟 加分项</p>` + r.extra_good.map(x=>`<div class="per-point hit">${esc(x)}</div>`).join("") : ""}
-      <p class="muted" style="margin-top:10px">参考要点（来自你的知识库）：</p>
-      ${r.reference.map(x => `<div class="per-point">${esc(x)}</div>`).join("")}
-    </div>`;
-  if (r.follow_up) {
-    html += `
-    <div class="followup-box"><b>💬 追问：</b>${esc(r.follow_up)}</div>
-    <textarea class="answer" id="followup-answer" placeholder="回答追问…"></textarea>
-    <div class="toolbar"><button class="btn primary" id="followup-grade-btn">提交追问回答</button></div>
-    <div id="followup-result"></div>`;
+  fb.replaceChildren();
+  if (displayText(r.reasoning)) {
+    const reasoning = makeEl("details", { className: "thinking" });
+    reasoning.append(makeEl("summary", { text: "🧠 面试官的思考过程" }),
+      makeEl("div", { className: "th-content", text: r.reasoning }));
+    fb.appendChild(reasoning);
   }
-  html += `<div class="toolbar"><button class="btn primary" id="quiz-next-inline">下一题</button></div>`;
-  fb.innerHTML = html;
+  const card = makeEl("div", { className: "card" });
+  card.style.marginTop = "14px";
+  const score = makeEl("div", { className: "score-big", text: scoreText(r.score) });
+  const suffix = makeEl("span", { className: "muted", text: " / 10" });
+  suffix.style.fontSize = "16px";
+  score.appendChild(suffix);
+  card.append(score, makeEl("p", { text: r.overall }));
+  asArray(r.per_point).map(asObject).forEach(point => {
+    const covered = point.covered === true;
+    const row = makeEl("div", {
+      className: `per-point ${covered ? "hit" : "miss"}`,
+      text: `${covered ? "✅" : "❌"} ${displayText(point.point)}`,
+    });
+    row.appendChild(makeEl("div", { className: "muted", text: point.comment }));
+    card.appendChild(row);
+  });
+  const addPointGroup = (title, values, cls) => {
+    const items = asArray(values);
+    if (!items.length) return;
+    card.appendChild(makeEl("p", { text: title }));
+    items.forEach(item => card.appendChild(makeEl("div", { className: `per-point ${cls}`, text: item })));
+  };
+  addPointGroup("📌 遗漏要点", r.missed, "miss");
+  addPointGroup("🌟 加分项", r.extra_good, "hit");
+  const referenceTitle = makeEl("p", { className: "muted", text: "参考要点（来自你的知识库）：" });
+  referenceTitle.style.marginTop = "10px";
+  card.appendChild(referenceTitle);
+  asArray(r.reference).forEach(item => card.appendChild(makeEl("div", { className: "per-point", text: item })));
+  fb.appendChild(card);
+
+  const followUp = displayText(r.follow_up);
+  if (followUp) {
+    const followBox = makeEl("div", { className: "followup-box" });
+    followBox.append(makeEl("b", { text: "💬 追问：" }), document.createTextNode(followUp));
+    const answer = makeEl("textarea", { className: "answer" });
+    answer.id = "followup-answer";
+    answer.placeholder = "回答追问…";
+    const toolbar = makeEl("div", { className: "toolbar" });
+    const followButton = makeEl("button", { className: "btn primary", text: "提交追问回答" });
+    followButton.id = "followup-grade-btn";
+    toolbar.appendChild(followButton);
+    const result = makeEl("div");
+    result.id = "followup-result";
+    fb.append(followBox, answer, toolbar, result);
+  }
+  const nextToolbar = makeEl("div", { className: "toolbar" });
+  const inlineNext = makeEl("button", { className: "btn primary", text: "下一题" });
+  inlineNext.id = "quiz-next-inline";
+  nextToolbar.appendChild(inlineNext);
+  fb.appendChild(nextToolbar);
   const fBtn = $("followup-grade-btn");
   if (fBtn) fBtn.onclick = async () => {
     const fa = $("followup-answer").value.trim();
@@ -895,13 +1168,18 @@ function renderQuizFeedback(r, c) {
     try {
       const rr = await api("/api/quiz/followup", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ card_id: c.id, question: r.follow_up, answer: fa,
+        body: JSON.stringify({ card_id: c.id, question: followUp, answer: fa,
           context_answer: quizLastAnswer, style: $("quiz-style").value }),
       });
-      $("followup-result").innerHTML = `
-        <div class="card"><b class="score-big" style="font-size:24px">${rr.score}/10</b>
-        <p>${esc(rr.overall || "")}</p>
-        <p class="muted">追问参考答案：</p><div class="per-point">${esc(rr.reference_answer || "")}</div></div>`;
+      const safeResult = asObject(rr);
+      const result = $("followup-result");
+      const resultCard = makeEl("div", { className: "card" });
+      const followScore = makeEl("b", { className: "score-big", text: `${scoreText(safeResult.score)}/10` });
+      followScore.style.fontSize = "24px";
+      resultCard.append(followScore, makeEl("p", { text: safeResult.overall }),
+        makeEl("p", { className: "muted", text: "追问参考答案：" }),
+        makeEl("div", { className: "per-point", text: safeResult.reference_answer }));
+      result.replaceChildren(resultCard);
     } catch (e) { alert("追问评分失败：" + e.message); }
     finally { fBtn.disabled = false; fBtn.textContent = "提交追问回答"; }
   };
@@ -945,7 +1223,7 @@ $("gen-start-btn").onclick = async () => {
   btn.disabled = true; btn.textContent = "生成中…";
   $("gen-progress-card").classList.remove("hidden");
   const live = $("gen-live");
-  live.innerHTML = "";
+  live.replaceChildren();
   let thinkBox = null;
   try {
     const resp = await fetch("/api/problems/generate", {
@@ -967,8 +1245,8 @@ $("gen-start-btn").onclick = async () => {
       let idx;
       while ((idx = buf.indexOf("\n\n")) >= 0) {
         const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
-        if (!chunk.startsWith("data: ")) continue;
-        const ev = JSON.parse(chunk.slice(6));
+        const ev = parseSseEvent(chunk);
+        if (!ev) continue;
         const k = ev.event;
         if (k === "thinking_delta" || k === "content_delta") {
           if (!thinkBox) thinkBox = makeThinkingBox(live);
@@ -986,13 +1264,17 @@ $("gen-start-btn").onclick = async () => {
         } else if (k === "verify_fix") {
           const d = document.createElement("div");
           d.className = "fail-line";
-          d.textContent = `⚠️ 参考解跑挂，喂回错误让 AI 修复：${(ev.errors || "").slice(0, 120)}`;
+          d.textContent = `⚠️ 参考解跑挂，喂回错误让 AI 修复：${displayText(ev.errors).slice(0, 120)}`;
           live.appendChild(d);
         } else if (k === "saved") {
-          const d = document.createElement("div");
-          d.className = "file-line";
-          d.innerHTML = `🎉 已入库：<b>${esc(ev.title)}</b>（${esc(ev.difficulty)}，${ev.n_cases} 用例）
-           　<button class="btn" style="padding:3px 10px;font-size:12px" onclick="goGenProblem('${esc(ev.problem_id)}')">去刷这道题 →</button>`;
+          const d = makeEl("div", { className: "file-line", text: "🎉 已入库：" });
+          d.append(makeEl("b", { text: ev.title }),
+            document.createTextNode(`（${difficultyInfo(ev.difficulty).label}，${finiteText(ev.n_cases)} 用例）　`));
+          const go = makeEl("button", { className: "btn", text: "去刷这道题 →" });
+          go.style.cssText = "padding:3px 10px;font-size:12px";
+          const problemId = displayText(ev.problem_id);
+          go.addEventListener("click", () => goGenProblem(problemId));
+          d.appendChild(go);
           live.appendChild(d);
           if (thinkBox) thinkBox.open = false;
           $("gen-status").textContent = "生成成功";
@@ -1006,7 +1288,7 @@ $("gen-start-btn").onclick = async () => {
       }
     }
   } catch (e) {
-    live.insertAdjacentHTML("beforeend", `<div class="fail-line">❌ ${esc(e.message)}</div>`);
+    live.appendChild(makeEl("div", { className: "fail-line", text: "❌ " + displayText(e.message, "未知错误") }));
   } finally {
     btn.disabled = false; btn.textContent = "生成题目";
   }
@@ -1035,9 +1317,10 @@ async function runImportStream(url, body, handlers) {
     let idx;
     while ((idx = buf.indexOf("\n\n")) >= 0) {
       const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
-      if (!chunk.startsWith("data: ")) continue;
-      const ev = JSON.parse(chunk.slice(6));
-      (handlers[ev.event] || (() => {}))(ev);
+      const ev = parseSseEvent(chunk);
+      if (!ev) continue;
+      const eventName = displayText(ev.event);
+      if (Object.prototype.hasOwnProperty.call(handlers, eventName)) handlers[eventName](ev);
     }
   }
 }
@@ -1059,7 +1342,7 @@ $("adapt-start-btn").onclick = async () => {
   btn.disabled = true; btn.textContent = "适配中…";
   $("gen-progress-card").classList.remove("hidden");
   const live = $("gen-live");
-  live.innerHTML = "";
+  live.replaceChildren();
   let thinkBox = null;
   try {
     await runImportStream("/api/problems/adapt", { path, limit }, {
@@ -1070,8 +1353,8 @@ $("adapt-start-btn").onclick = async () => {
         appendThinking(thinkBox, ev.text);
       },
       content_delta: ev => { if (thinkBox) appendThinking(thinkBox, ev.text); },
-      verify_case: ev => kbLine(live, `  ✅ 沙箱验证通过：${(ev.detail || "").slice(0, 80)}`),
-      verify_fix: ev => kbLine(live, `  ⚠️ 修复中：${(ev.errors || "").slice(0, 80)}`, "fail-line"),
+      verify_case: ev => kbLine(live, `  ✅ 沙箱验证通过：${displayText(ev.detail).slice(0, 80)}`),
+      verify_fix: ev => kbLine(live, `  ⚠️ 修复中：${displayText(ev.errors).slice(0, 80)}`, "fail-line"),
       saved: ev => {
         const d = kbLine(live, `  🎉 入库：${ev.title}（${ev.n_cases} 用例）`);
         const b = document.createElement("button");
@@ -1095,7 +1378,7 @@ $("jsonimp-start-btn").onclick = async () => {
   btn.disabled = true; btn.textContent = "导入中…";
   $("gen-progress-card").classList.remove("hidden");
   const live = $("gen-live");
-  live.innerHTML = "";
+  live.replaceChildren();
   try {
     await runImportStream("/api/problems/import_json", { path }, {
       total: ev => kbLine(live, `共 ${ev.n} 个 JSON 文件`, "file-line"),
@@ -1111,16 +1394,37 @@ $("jsonimp-start-btn").onclick = async () => {
 async function loadSources() {
   const d = await api("/api/sources");
   const tb = $("kb-sources-table").querySelector("tbody");
-  tb.innerHTML = d.sources.map(s => `
-    <tr><td>${esc(s.title)}</td><td>${s.n_cards}</td>
-    <td class="muted">${esc((s.ingested_at || "").replace("T", " ").slice(0, 16))}</td>
-    <td><button class="btn" style="padding:3px 10px;font-size:12px" onclick="delSource(${s.id})">删除</button></td></tr>`
-  ).join("") || '<tr><td colspan="4" class="muted">还没有导入任何知识。在上方输入目录路径开始。</td></tr>';
+  const sources = asArray(asObject(d).sources).map(asObject);
+  tb.replaceChildren();
+  if (!sources.length) {
+    const row = document.createElement("tr");
+    const cell = makeEl("td", { className: "muted", text: "还没有导入任何知识。在上方输入目录路径开始。" });
+    cell.colSpan = 4;
+    row.appendChild(cell);
+    tb.appendChild(row);
+    return;
+  }
+  sources.forEach(source => {
+    const row = document.createElement("tr");
+    const action = document.createElement("td");
+    const del = makeEl("button", { className: "btn", text: "删除" });
+    del.style.cssText = "padding:3px 10px;font-size:12px";
+    const sourceId = displayText(source.id);
+    del.addEventListener("click", () => delSource(sourceId));
+    action.appendChild(del);
+    row.append(makeEl("td", { text: source.title }),
+      makeEl("td", { text: finiteText(source.n_cards) }),
+      makeEl("td", {
+        className: "muted",
+        text: displayText(source.ingested_at).replace("T", " ").slice(0, 16),
+      }), action);
+    tb.appendChild(row);
+  });
 }
 
 async function delSource(id) {
   if (!confirm("删除该来源及其全部题卡？（练习记录保留）")) return;
-  await api(`/api/sources/${id}`, { method: "DELETE" });
+  await api(`/api/sources/${encodeURIComponent(displayText(id))}`, { method: "DELETE" });
   loadSources();
 }
 
@@ -1128,20 +1432,44 @@ $("kb-browse-btn").onclick = async () => {
   const path = $("kb-path").value.trim() || "~";
   try {
     const d = await api(`/api/fs/browse?path=${encodeURIComponent(path)}`);
-    $("kb-browse-area").innerHTML = `
-      <div class="card" style="margin-top:10px;background:var(--panel2)">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button class="btn" style="padding:4px 10px;font-size:12px" onclick="kbGo('${esc(d.parent || "")}')">↑ 上级</button>
-          <span class="muted" style="font-size:13px">${esc(d.current)}</span>
-          <span class="badge tag">${d.importable_count} 个可导入文件</span>
-        </div>
-        <div style="margin-top:8px;max-height:180px;overflow:auto">
-          ${d.dirs.slice(0, 60).map(x =>
-            `<div style="padding:2px 0"><a href="javascript:void(0)" onclick="kbGo('${esc(x.path)}')" style="font-size:13.5px">📁 ${esc(x.name)}</a></div>`).join("")}
-          ${d.importable_files.slice(0, 40).map(x =>
-            `<div class="muted" style="font-size:12.5px;padding:2px 0">📄 ${esc(x.name)}</div>`).join("")}
-        </div>
-      </div>`;
+    const info = asObject(d);
+    const area = $("kb-browse-area");
+    const card = makeEl("div", { className: "card" });
+    card.style.cssText = "margin-top:10px;background:var(--panel2)";
+    const toolbar = document.createElement("div");
+    toolbar.style.cssText = "display:flex;gap:8px;align-items:center;flex-wrap:wrap";
+    const up = makeEl("button", { className: "btn", text: "↑ 上级" });
+    up.style.cssText = "padding:4px 10px;font-size:12px";
+    const parentPath = displayText(info.parent);
+    up.disabled = !parentPath;
+    up.addEventListener("click", () => kbGo(parentPath));
+    const current = makeEl("span", { className: "muted", text: info.current });
+    current.style.fontSize = "13px";
+    const count = makeEl("span", {
+      className: "badge tag",
+      text: `${finiteText(info.importable_count, "0")} 个可导入文件`,
+    });
+    toolbar.append(up, current, count);
+    const listing = document.createElement("div");
+    listing.style.cssText = "margin-top:8px;max-height:180px;overflow:auto";
+    asArray(info.dirs).slice(0, 60).map(asObject).forEach(entry => {
+      const row = document.createElement("div");
+      row.style.padding = "2px 0";
+      const link = makeEl("button", { className: "path-link", text: "📁 " + displayText(entry.name) });
+      link.type = "button";
+      link.style.cssText = "font-size:13.5px;background:none;border:0;padding:0;color:var(--accent);cursor:pointer";
+      const entryPath = displayText(entry.path);
+      link.addEventListener("click", () => kbGo(entryPath));
+      row.appendChild(link);
+      listing.appendChild(row);
+    });
+    asArray(info.importable_files).slice(0, 40).map(asObject).forEach(entry => {
+      const row = makeEl("div", { className: "muted", text: "📄 " + displayText(entry.name) });
+      row.style.cssText = "font-size:12.5px;padding:2px 0";
+      listing.appendChild(row);
+    });
+    card.append(toolbar, listing);
+    area.replaceChildren(card);
   } catch (e) { alert("浏览失败：" + e.message); }
 };
 function kbGo(path) { if (path) { $("kb-path").value = path; $("kb-browse-btn").click(); } }
@@ -1159,7 +1487,7 @@ $("kb-import-btn").onclick = async () => {
   const path = $("kb-path").value.trim();
   if (!path) return alert("请填写目录路径");
   $("kb-progress-card").classList.remove("hidden");
-  $("kb-live").innerHTML = "";
+  $("kb-live").replaceChildren();
   kbThinkingText = "";
   const btn = $("kb-import-btn");
   btn.disabled = true; btn.textContent = "导入中…";
@@ -1184,8 +1512,8 @@ $("kb-import-btn").onclick = async () => {
       let idx;
       while ((idx = buf.indexOf("\n\n")) >= 0) {
         const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
-        if (!chunk.startsWith("data: ")) continue;
-        const ev = JSON.parse(chunk.slice(6));
+        const ev = parseSseEvent(chunk);
+        if (!ev) continue;
         const k = ev.event;
         if (k === "file_start") {
           kbLog(`📄 ${ev.file}（${ev.blocks} 个知识块）`, "file-line");
@@ -1201,12 +1529,11 @@ $("kb-import-btn").onclick = async () => {
             thinkDiv = document.createElement("details");
             thinkDiv.className = "thinking";
             thinkDiv.open = false;
-            thinkDiv.innerHTML = '<summary>🧠 AI thinking…</summary><div class="th-content"></div>';
+            thinkDiv.append(makeEl("summary", { text: "🧠 AI thinking…" }),
+              makeEl("div", { className: "th-content" }));
             $("kb-live").appendChild(thinkDiv);
           }
-          const tc = thinkDiv.querySelector(".th-content");
-          tc.textContent += ev.text;
-          tc.scrollTop = tc.scrollHeight;
+          appendThinking(thinkDiv, ev.text);
         } else if (k === "all_done") {
           filesTotal = ev.files_total; filesDone = ev.files_done + ev.files_skipped + ev.files_failed;
           $("kb-progress-fill").style.width = "100%";
@@ -1229,18 +1556,21 @@ $("kb-import-btn").onclick = async () => {
 
 // ---------- 设置 ----------
 async function loadSettings() {
-  loadMyKey();
+  $("card-mykey").classList.toggle("hidden", !(currentUser && currentUser.multiuser));
+  if (currentUser && currentUser.multiuser) loadMyKey();
   if (!currentUser || !currentUser.is_admin) {
     $("card-serverllm").classList.add("hidden");
     $("card-users").classList.add("hidden");
     return;
   }
   try {
-    const d = await api("/api/llm/config");
-    $("set-baseurl").value = d.base_url;
+    const d = asObject(await api("/api/llm/config"));
+    $("set-baseurl").value = displayText(d.base_url);
     const sel = $("set-model-select");
     if (![...sel.options].some(o => o.value === d.model)) {
-      sel.innerHTML = `<option value="${esc(d.model)}">${esc(d.model)}</option>`;
+      const option = makeEl("option", { text: d.model });
+      option.value = displayText(d.model);
+      sel.replaceChildren(option);
     }
     sel.value = d.model;
     $("set-key-masked").textContent = d.configured ? d.api_key_masked : "未配置";
@@ -1252,11 +1582,22 @@ async function loadSettings() {
 // 个人 API Key
 async function loadMyKey() {
   try {
-    const d = await api("/api/me/llm");
-    $("mykey-status").innerHTML = d.using_own_key
-      ? '当前：<b style="color:var(--green)">使用你自己的 Key</b>'
-      : (d.server_configured ? '当前：使用服务器共享 Key'
-         : '当前：<b style="color:var(--amber)">服务器未配置 Key</b>（可填自己的）');
+    const d = asObject(await api("/api/me/llm"));
+    const status = $("mykey-status");
+    status.replaceChildren();
+    if (d.using_own_key) {
+      status.append(document.createTextNode(" 当前："));
+      const own = makeEl("b", { text: "使用你自己的 Key" });
+      own.style.color = "var(--green)";
+      status.appendChild(own);
+    } else if (d.server_configured) {
+      status.textContent = " 当前：使用服务器共享 Key";
+    } else {
+      status.append(document.createTextNode(" 当前："));
+      const missing = makeEl("b", { text: "服务器未配置 Key" });
+      missing.style.color = "var(--amber)";
+      status.append(missing, document.createTextNode("（可填自己的）"));
+    }
   } catch {}
 }
 $("mykey-save-btn").onclick = async () => {
@@ -1273,22 +1614,31 @@ $("mykey-save-btn").onclick = async () => {
 // 用户管理（管理员）
 async function loadUsers() {
   try {
-    const d = await api("/api/admin/users");
+    const d = asObject(await api("/api/admin/users"));
     const tb = $("users-table").querySelector("tbody");
-    tb.innerHTML = d.users.map(u => `
-      <tr><td>${esc(u.username)}</td>
-        <td>${u.is_admin ? "管理员" : "成员"}</td>
-        <td class="muted">${u.llm_today}</td>
-        <td class="muted">${u.api_key ? "✔" : "—"}</td>
-        <td><button class="btn" style="padding:3px 10px;font-size:12px"
-            onclick="resetUserPass('${esc(u.username)}')">重置密码</button>
-          <button class="btn" style="padding:3px 10px;font-size:12px"
-            onclick="delUser('${esc(u.username)}')">删除</button></td></tr>`).join("");
+    tb.replaceChildren();
+    asArray(asObject(d).users).map(asObject).forEach(user => {
+      const username = displayText(user.username);
+      const row = document.createElement("tr");
+      const action = document.createElement("td");
+      const reset = makeEl("button", { className: "btn", text: "重置密码" });
+      const del = makeEl("button", { className: "btn", text: "删除" });
+      [reset, del].forEach(button => { button.style.cssText = "padding:3px 10px;font-size:12px"; });
+      reset.addEventListener("click", () => resetUserPass(username));
+      del.addEventListener("click", () => delUser(username));
+      action.append(reset, document.createTextNode(" "), del);
+      row.append(makeEl("td", { text: username }),
+        makeEl("td", { text: user.is_admin ? "管理员" : "成员" }),
+        makeEl("td", { className: "muted", text: finiteText(user.llm_today, "0") }),
+        makeEl("td", { className: "muted", text: user.has_api_key ? "✔" : "—" }),
+        action);
+      tb.appendChild(row);
+    });
   } catch {}
 }
 $("au-add-btn").onclick = async () => {
   const name = $("au-name").value.trim(), pass = $("au-pass").value;
-  if (!name || pass.length < 4) return alert("用户名必填，密码至少 4 位");
+  if (!name || pass.length < 8) return alert("用户名必填，密码至少 8 位");
   try {
     await api("/api/admin/users", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -1300,8 +1650,9 @@ $("au-add-btn").onclick = async () => {
   } catch (e) { alert("添加失败：" + e.message); }
 };
 async function resetUserPass(name) {
-  const pass = prompt(`为 ${name} 设置新密码（至少 4 位）：`);
-  if (!pass) return;
+  const pass = prompt(`为 ${name} 设置新密码（至少 8 位）：`);
+  if (pass === null) return;
+  if (pass.length < 8) return alert("密码至少 8 位");
   try {
     await api(`/api/admin/users/${encodeURIComponent(name)}/passwd`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -1317,9 +1668,6 @@ async function delUser(name) {
     loadUsers();
   } catch (e) { alert("删除失败：" + e.message); }
 }
-window.resetUserPass = resetUserPass;
-window.delUser = delUser;
-
 $("set-scan-btn").onclick = async () => {
   const btn = $("set-scan-btn");
   btn.disabled = true; btn.textContent = "扫描中…";
@@ -1330,12 +1678,17 @@ $("set-scan-btn").onclick = async () => {
       body: JSON.stringify({ base_url: $("set-baseurl").value.trim(),
         model: $("set-model-select").value, api_key: $("set-apikey").value.trim() }),
     });
-    const d = await api("/api/llm/models");
+    const d = asObject(await api("/api/llm/models"));
     const sel = $("set-model-select");
-    sel.innerHTML = d.models.map(m =>
-      `<option value="${esc(m)}" ${m === d.current ? "selected" : ""}>${esc(m)}</option>`).join("");
-    sel.value = d.current;
-    $("set-status").textContent = `● 扫到 ${d.models.length} 个模型`;
+    const models = asArray(asObject(d).models);
+    sel.replaceChildren(...models.map(model => {
+      const text = displayText(model);
+      const option = makeEl("option", { text });
+      option.value = text;
+      return option;
+    }));
+    sel.value = displayText(d.current);
+    $("set-status").textContent = `● 扫到 ${models.length} 个模型`;
     refreshBadge();
   } catch (e) { alert("扫描失败：" + e.message); }
   finally { btn.disabled = false; btn.textContent = "扫描可用模型"; }
@@ -1343,11 +1696,11 @@ $("set-scan-btn").onclick = async () => {
 
 $("set-save-btn").onclick = async () => {
   try {
-    const d = await api("/api/llm/config", {
+    const d = asObject(await api("/api/llm/config", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ base_url: $("set-baseurl").value.trim(),
         model: $("set-model-select").value, api_key: $("set-apikey").value.trim() }),
-    });
+    }));
     $("set-status").textContent = d.llm_ready ? `● 已保存（${d.model}）` : "已保存，但 key 仍为空";
     $("set-apikey").value = "";
     loadSettings(); refreshBadge();
@@ -1361,15 +1714,20 @@ $("set-save-btn").onclick = async () => {
 
 // ---------- 概览 ----------
 async function loadStats() {
-  const s = await api("/api/stats");
+  const s = asObject(await api("/api/stats"));
   const ac = problems.filter(p => p.ever_ac).length;
   const items = [
     ["八股题卡", s.cards], ["已学习", s.learned_cards ?? "—"], ["代码题", s.problems],
     ["代码已攻克", `${ac}/${problems.length}`], ["提交次数", s.submissions], ["AC 次数", s.ac],
     ["八股练习", s.quiz_attempts], ["八股均分", s.quiz_avg_score ?? "—"],
   ];
-  $("stats-grid").innerHTML = items.map(([k, v]) =>
-    `<div class="card"><div class="num">${v}</div><div class="muted">${k}</div></div>`).join("");
+  const grid = $("stats-grid");
+  grid.replaceChildren(...items.map(([k, v]) => {
+    const card = makeEl("div", { className: "card" });
+    card.append(makeEl("div", { className: "num", text: v }),
+      makeEl("div", { className: "muted", text: k }));
+    return card;
+  }));
 }
 
 // ---------- 登录 / 登出 ----------
@@ -1418,7 +1776,7 @@ async function initRegistrationMode() {
 }
 initRegistrationMode();
 
-$("register-btn").onclick = async () => {
+async function tryRegister() {
   const btn = $("register-btn");
   btn.disabled = true; btn.textContent = "注册中…";
   try {
@@ -1426,19 +1784,26 @@ $("register-btn").onclick = async () => {
                    password: $("login-password").value };
     if (!$("reg-code").classList.contains("hidden"))
       body.code = $("reg-code").value.trim();
-    const r = await api("/api/auth/register", {
+    const r = asObject(await api("/api/auth/register", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    });
+    }));
     if (r.ok) location.reload();
   } catch (e) {
     $("login-error").textContent = e.message;
   } finally {
     btn.disabled = false; btn.textContent = "注册并登录";
   }
-};
-$("login-password").addEventListener("keydown", e => {
-  if (e.key === "Enter" && !e.isComposing) tryLogin();
+}
+$("register-btn").onclick = tryRegister;
+["login-username", "login-password", "reg-code"].forEach(id => {
+  $(id).addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.isComposing) {
+      e.preventDefault();
+      if (authMode === "register") tryRegister();
+      else tryLogin();
+    }
+  });
 });
 $("logout-btn").onclick = async () => {
   try { await api("/api/auth/logout", { method: "POST" }); } catch {}
@@ -1536,13 +1901,8 @@ async function boot() {
 }
 boot();
 
-// inline onclick 导出
-window.delSource = delSource;
-window.kbGo = kbGo;
-
 async function delProblem(pid) {
   if (!confirm("删除这道 AI 生成题？")) return;
-  await api("/api/problems/" + pid, { method: "DELETE" });
+  await api("/api/problems/" + encodeURIComponent(displayText(pid)), { method: "DELETE" });
   loadProblems();
 }
-window.delProblem = delProblem;

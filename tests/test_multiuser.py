@@ -34,14 +34,35 @@ def login(client, name, pw="pass1234"):
     return r.json()
 
 
+def enable_test_judge(monkeypatch):
+    """单测显式替换安全后端；生产代码仍保持多用户 Docker fail-closed。"""
+    import prepdojo.web.server as server_mod
+    from prepdojo.judge import judge_submission as local_judge
+
+    monkeypatch.setattr(
+        server_mod, "judge_backend_status",
+        lambda image: {"configured": True, "ready": True, "mode": "test"})
+
+    def run_local(code, language, cases, *args, **kwargs):
+        if len(args) >= 4:
+            args = (*args[:3], "", *args[4:])
+        else:
+            kwargs["docker_image"] = ""
+        return local_judge(code, language, cases, *args, **kwargs)
+
+    monkeypatch.setattr(server_mod, "judge_submission", run_local)
+
+
 # ---------- 认证 ----------
 
 def test_unauthenticated_gets_401(tmp_path):
     c, _ = make_app(tmp_path)
     assert c.get("/api/problems").status_code == 401
     assert c.get("/api/stats").status_code == 401
-    # health 不需要登录（前端徽标用）
-    assert c.get("/api/health").status_code == 200
+    # health 不需要登录，但多用户未配置 Docker 时必须明确不就绪。
+    health = c.get("/api/health")
+    assert health.status_code == 503
+    assert health.json()["ok"] is False and health.json()["judge"]["ready"] is False
 
 
 def test_login_logout_flow(tmp_path):
@@ -67,7 +88,8 @@ def test_local_mode_no_auth(tmp_path):
 
 # ---------- 数据隔离 ----------
 
-def test_submission_and_wrong_book_isolation(tmp_path):
+def test_submission_and_wrong_book_isolation(tmp_path, monkeypatch):
+    enable_test_judge(monkeypatch)
     c, db = make_app(tmp_path)
     add_user(db, "alice")
     add_user(db, "bob")
@@ -98,7 +120,8 @@ def test_submission_and_wrong_book_isolation(tmp_path):
     assert c.get("/api/stats").json()["submissions"] == 1  # 只有 bob 自己的
 
 
-def test_idor_cannot_review_others_submission(tmp_path):
+def test_idor_cannot_review_others_submission(tmp_path, monkeypatch):
+    enable_test_judge(monkeypatch)
     c, db = make_app(tmp_path)
     add_user(db, "alice")
     add_user(db, "bob")
@@ -216,8 +239,8 @@ def test_personal_api_key_storage(tmp_path):
 # ---------- 用量配额 ----------
 
 def test_daily_llm_quota_429(tmp_path):
-    # base_url 指向必然连接失败的本地端口：前两次调用走配额（LLM 构造成功、
-    # 实际请求立即失败返回 502），第三次超限直接 429
+    # 配额按真实外发请求计数：首次业务调用至多重试一次并返回上游错误，
+    # 两次真实外发消费额度，后续调用保持 429。
     c, db = make_app(tmp_path, api_key="sk-test-quota",
                      base_url="http://127.0.0.1:9", daily_limit_per_user=2)
     add_user(db, "alice")
@@ -225,8 +248,7 @@ def test_daily_llm_quota_429(tmp_path):
     sid = db.upsert_source("/tmp/q.pdf", "sha", "q")
     cid = db.insert_card("什么是 B？", ["要点"], ["追问"], ["RAG"], 2, sid, "q|Q")
     codes = [c.get(f"/api/cards/{cid}/explain").status_code for _ in range(3)]
-    assert codes[0] == 502 and codes[1] == 502  # 前两次：配额放行，LLM 网络失败
-    assert codes[2] == 429                       # 第三次：超限
+    assert codes == [502, 429, 429]
     assert db.llm_usage_today("alice") == 2
 
 
@@ -270,20 +292,13 @@ def test_migrate_old_singleuser_db(tmp_path):
 
 def _reg_client(tmp_path, registration="code", code="LAB2026"):
     """构造指定注册模式的登录客户端。"""
-    import importlib
-
-    import prepdojo.config as cfgmod
-    importlib.reload(cfgmod)
-    from prepdojo.db import DB as DB2
-    from prepdojo.web.server import create_app as _create
-
-    db = DB2(tmp_path / "reg.db")
+    db = DB(tmp_path / "reg.db")
     db.create_user("admin", "adminpass", is_admin=True)
-    cfg = cfgmod.Config(api_key="", db_path=tmp_path / "reg.db")
+    cfg = Config(api_key="", db_path=tmp_path / "reg.db")
     cfg.multiuser = True
     cfg.registration = registration
     cfg.registration_code = code
-    return TestClient(_create(cfg, db, multiuser=True))
+    return TestClient(create_app(cfg, db, multiuser=True))
 
 
 def test_registration_mode_endpoint(tmp_path):
@@ -296,11 +311,11 @@ def test_register_with_code(tmp_path):
     c = _reg_client(tmp_path, registration="code", code="LAB2026")
     # 错误邀请码
     r = c.post("/api/auth/register",
-               json={"username": "alice", "password": "123456", "code": "WRONG"})
+               json={"username": "alice", "password": "12345678", "code": "WRONG"})
     assert r.status_code == 403
     # 正确邀请码 → 自动登录（cookie 生效）
     r2 = c.post("/api/auth/register",
-                json={"username": "alice", "password": "123456", "code": "LAB2026"})
+                json={"username": "alice", "password": "12345678", "code": "LAB2026"})
     assert r2.status_code == 200 and r2.json()["is_admin"] is False
     me = c.get("/api/me")
     assert me.status_code == 200 and me.json()["username"] == "alice"
@@ -309,20 +324,20 @@ def test_register_with_code(tmp_path):
 def test_register_open_and_off(tmp_path):
     c = _reg_client(tmp_path, registration="open")
     assert c.post("/api/auth/register",
-                  json={"username": "bob", "password": "123456"}).status_code == 200
+                  json={"username": "bob", "password": "12345678"}).status_code == 200
     c2 = _reg_client(tmp_path, registration="off")
     assert c2.post("/api/auth/register",
-                   json={"username": "carol", "password": "123456"}).status_code == 403
+                   json={"username": "carol", "password": "12345678"}).status_code == 403
 
 
 def test_register_validation(tmp_path):
     c = _reg_client(tmp_path, registration="open")
     # 用户名过短 / 密码过短 / 重复注册
     assert c.post("/api/auth/register",
-                  json={"username": "a", "password": "123456"}).status_code == 400
+                  json={"username": "a", "password": "12345678"}).status_code == 400
     assert c.post("/api/auth/register",
                   json={"username": "dave", "password": "123"}).status_code == 400
     assert c.post("/api/auth/register",
-                  json={"username": "dave", "password": "123456"}).status_code == 200
+                  json={"username": "dave", "password": "12345678"}).status_code == 200
     assert c.post("/api/auth/register",
-                  json={"username": "dave", "password": "123456"}).status_code == 409
+                  json={"username": "dave", "password": "12345678"}).status_code == 409

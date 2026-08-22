@@ -9,12 +9,15 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from .llm import LLMClient
+from .llm import LLMClient, _strict_json_loads
 
 MAX_TOOL_ROUNDS = 8
+MAX_TOOL_CALLS = 3
+CHAT_TOTAL_TIMEOUT = 180.0
 
 COACH_SYSTEM = """你是一位经验丰富的算法面试教练，正在一对一辅导一位准备秋招的考生。
 你有一个本地判题沙箱作为工具：可以运行代码、对题目用例判题。**善用它**：
@@ -85,7 +88,7 @@ TOOLS_SPEC = [
         "type": "function",
         "function": {
             "name": "run_problem_case",
-            "description": "把代码提交到指定题目的判题沙箱，对全部测试用例运行，返回每用例的判定（AC/WA/TLE/RE）、期望输出与实际输出。用于判题、对比官方答案。",
+            "description": "把代码提交到指定题目的判题沙箱，对全部测试用例运行，返回总判定及每用例判定。隐藏用例内容不会返回。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -120,14 +123,18 @@ class SandboxTools:
     def __init__(self, get_problem: Callable[[str], Optional[dict]],
                  load_cases: Callable[[str], list[dict]],
                  cpp_compiler: str = "clang++",
-                 docker_image: str = ""):
+                 docker_image: str = "",
+                 judge: Optional[Callable[..., Any]] = None,
+                 problem_snapshot: Optional[
+                     Callable[[str], Optional[tuple[dict, list[dict]]]]] = None):
         from .judge import judge_submission  # 延迟导入避免环
 
-        self._judge = judge_submission
+        self._judge = judge or judge_submission
         self._get_problem = get_problem
         self._load_cases = load_cases
         self._cpp_compiler = cpp_compiler
         self._docker_image = docker_image
+        self._problem_snapshot = problem_snapshot
 
     def run_code(self, code: str, language: str, stdin: str = "") -> str:
         res = self._judge(code, language, [{"input": stdin, "output": ""}],
@@ -143,10 +150,16 @@ class SandboxTools:
         }, ensure_ascii=False)
 
     def run_problem_case(self, problem_id: str, code: str, language: str) -> str:
-        p = self._get_problem(problem_id)
+        snapshot = self._problem_snapshot(problem_id) if self._problem_snapshot else None
+        if snapshot:
+            p, cases = snapshot
+        else:
+            p = self._get_problem(problem_id)
+            cases = self._load_cases(problem_id) if p else []
         if not p:
             return json.dumps({"error": f"题目不存在: {problem_id}"}, ensure_ascii=False)
-        cases = self._load_cases(problem_id)
+        if not p.get("valid", True):
+            return json.dumps({"error": f"题目数据不合法，已隔离: {problem_id}"}, ensure_ascii=False)
         res = self._judge(code, language, cases,
                           time_limit_ms=p["time_limit_ms"],
                           mem_limit_mb=p["mem_limit_mb"],
@@ -156,10 +169,7 @@ class SandboxTools:
             "verdict": res.verdict,
             "max_time_ms": res.max_time_ms,
             "cases": [
-                {"idx": c.idx, "verdict": c.verdict, "time_ms": c.time_ms,
-                 **({"expected": c.expected[:500], "actual": c.stdout[:500]}
-                    if c.verdict == "WA" else {}),
-                 **({"stderr": c.stderr[:400]} if c.verdict in ("RE", "MLE") else {})}
+                {"idx": c.idx, "verdict": c.verdict, "time_ms": c.time_ms}
                 for c in res.cases
             ],
         }
@@ -204,18 +214,24 @@ def chat_step(
     """
     messages = [dict(m) for m in history]
     trace: list[ToolTrace] = []
+    tool_calls_used = 0
+    deadline = time.monotonic() + CHAT_TOTAL_TIMEOUT
 
     def emit(kind: str, **data) -> None:
         if on_event:
             on_event(kind, data)
 
     for round_i in range(max_rounds):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("AI 教练总处理时间已超时")
         content, reasoning = "", ""
         calls: list[dict] = []
         try:
             for ev in llm.stream_chat(
                 "", "", max_tokens=3000, tools=TOOLS_SPEC,
                 _messages_override=messages,
+                total_timeout=remaining,
             ):
                 if ev["type"] == "done":
                     content, reasoning = ev["content"], ev["reasoning"]
@@ -224,6 +240,8 @@ def chat_step(
                     emit("thinking_delta", text=ev["text"])
                 elif ev["type"] == "content_delta":
                     emit("content_delta", text=ev["text"])
+                elif ev["type"] == "error":
+                    raise RuntimeError(ev.get("message", "AI 响应超时"))
         except Exception as e:
             raise RuntimeError(f"LLM 调用失败: {e}") from e
 
@@ -238,9 +256,18 @@ def chat_step(
         for call in calls:
             fn = call["function"]
             try:
-                args = json.loads(fn["arguments"] or "{}")
-            except json.JSONDecodeError:
+                args = _strict_json_loads(fn["arguments"] or "{}")
+            except (json.JSONDecodeError, ValueError):
                 args = {}
+            if tool_calls_used >= MAX_TOOL_CALLS:
+                messages.append({
+                    "role": "tool", "tool_call_id": call["id"],
+                    "content": json.dumps(
+                        {"error": f"本轮工具调用总数上限为 {MAX_TOOL_CALLS}，请直接作答"},
+                        ensure_ascii=False),
+                })
+                continue
+            tool_calls_used += 1
             emit("tool_start", name=fn["name"], args=args)
             result, summary = tools.dispatch(fn["name"], args)
             trace.append(ToolTrace(fn["name"], args, summary))
@@ -248,13 +275,31 @@ def chat_step(
             messages.append({"role": "tool", "tool_call_id": call["id"],
                              "content": result})
 
-    messages.append({"role": "user", "content": "（工具调用轮数已达上限，请基于已有信息直接给出结论。）"})
+        if tool_calls_used >= MAX_TOOL_CALLS:
+            messages.append({
+                "role": "user",
+                "content": "（工具调用总数已达上限，请基于已有沙箱事实直接给出结论。）",
+            })
+            break
+
+    else:
+        messages.append({
+            "role": "user",
+            "content": "（工具调用轮数已达上限，请基于已有信息直接给出结论。）",
+        })
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise RuntimeError("AI 教练总处理时间已超时")
     content, _ = "", ""
-    for ev in llm.stream_chat("", "", max_tokens=2500, _messages_override=messages):
+    for ev in llm.stream_chat(
+            "", "", max_tokens=2500, _messages_override=messages,
+            total_timeout=remaining):
         if ev["type"] == "done":
             content = ev["content"]
         elif ev["type"] == "content_delta":
             emit("content_delta", text=ev["text"])
+        elif ev["type"] == "error":
+            raise RuntimeError(ev.get("message", "AI 响应超时"))
     emit("reply", text=content)
     return ChatResult(reply=content, tool_trace=trace, stopped_reason="max_rounds")
 
@@ -264,13 +309,15 @@ def build_problem_context(problem: dict, code: str, language: str,
                           last_detail: Optional[str] = None) -> str:
     parts = [
         f"【当前题目】{problem['id']} {problem['title']}（{problem['difficulty']}）",
-        f"题面：\n{problem['statement']}",
+        f"题面：\n{str(problem['statement'])[:20000]}",
     ]
     if problem.get("samples"):
         s = problem["samples"][0]
-        parts.append(f"样例：输入 {s['input']!r} 输出 {s['output']!r}")
+        parts.append(
+            f"样例：输入 {str(s['input'])[:2000]!r} "
+            f"输出 {str(s['output'])[:2000]!r}")
     if code and code.strip():
-        parts.append(f"【考生当前代码（{language}，编辑器实时快照）】\n```\n{code[:4000]}\n```")
+        parts.append(f"【考生当前代码（{language}，编辑器实时快照）】\n```\n{code[:12000]}\n```")
     if last_verdict:
         parts.append(f"【最近一次判题结果】{last_verdict}\n{last_detail or ''}")
     return "\n\n".join(parts)
@@ -280,15 +327,13 @@ def ai_judge_report(reply_text: str) -> Optional[dict]:
     """从 AI 判题的最终回复中解析 JSON 报告；失败返回 None。"""
     from .llm import _find_json_object
 
-    import json as _json
-
     cand = _find_json_object(reply_text)
     if cand:
         try:
-            obj = _json.loads(cand)
+            obj = _strict_json_loads(cand)
             if isinstance(obj, dict):
                 return obj
-        except _json.JSONDecodeError:
+        except (json.JSONDecodeError, ValueError):
             pass
     return None
 
@@ -313,7 +358,7 @@ def fix_code(llm, problem, code, language, verdict, detail, on_event=None):
 
 【考生代码（{language}）】
 ```{language}
-{code[:6000]}
+{code[:12000]}
 ```
 
 请直接给出修复后的代码。"""

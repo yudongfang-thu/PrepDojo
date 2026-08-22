@@ -10,14 +10,16 @@
 
 - **你的知识库属于你**：八股 PDF、笔记、练习记录全部留在本机 `data/`（已被 `.gitignore` 排除），本仓库**永不包含第三方内容**。
 - **判题不依赖任何服务**：本地沙箱执行，断网可用。
-- **AI 模块默认 DeepSeek 官方 API**（bug 最少、质量稳定）。
+- **AI 模块默认使用 DeepSeek 的 OpenAI-compatible API**，也可配置其他兼容端点。
 
 ## 快速开始
 
 ```bash
 git clone https://github.com/yudongfang-thu/PrepDojo.git
 cd PrepDojo
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip==26.2.1
+.venv/bin/python -m pip install -r requirements.txt
 
 # 1) 导入 20 道内置代码题（题面与用例全部自写）
 .venv/bin/python -m prepdojo.cli seed
@@ -83,16 +85,16 @@ AI 看到的是沙箱跑出的真实结果——对错来自事实而非模型�
 用户目录（任意结构的 PDF/MD/TXT）
   → 抽取（pypdf；扫描图自动识别并跳过）
   → 分块（Q&A 边界启发式：编号问题 / 问号行 / 滑窗兜底）
-  → LLM 结构化（JSON Schema 约束输出 + 解析失败重试）
+  → LLM 结构化（严格字段/类型/长度校验 + 解析失败重试）
   → SQLite（data/prepdojo.db，本地私产）
 ```
 
-实测：92 个文字型 PDF（505 页 / 51 万字符）→ 790 个 Q&A 块，全量结构化约 100 万 token（DeepSeek 约 ¥4）。
+一组内部样本中，92 个文字型 PDF（505 页 / 51 万字符）可抽取为约 790 个 Q&A 块；实际 token 与费用取决于资料和服务商。
 
 ## 隐私与版权承诺
 
 1. **分发红线**：仓库只含代码与自写种子内容；`data/` 目录被 `.gitignore` 排除，请勿将第三方题库 / 八股资料提交进来。
-2. **API 边界（诚实说明）**：ingest 与 AI 点评会把**所给文本**发送到你配置的 LLM 服务商。「不上传」指不公开分发、不入仓库，不是「不经网络」。需要完全离线请用 Ollama。
+2. **API 边界（诚实说明）**：启用 AI 功能后，知识文本、题目、代码、回答和相关对话上下文会发送到你配置的 LLM 服务商。「本地优先」指数据默认不公开分发、不入仓库，不表示 AI 请求不经网络。完全离线需配置本机 OpenAI-compatible 模型服务并确认它不会转发请求。
 3. **不搬运题面**：不爬取、不内置 LeetCode / 牛客等平台的题目描述。想练平台原题，请在平台作答后把代码贴回来判题点评（BYO 模式）。
 
 ## 项目结构
@@ -116,27 +118,23 @@ tests/               # pytest（判题五态 / 抽取 / 持久化 / Web API）
 legacy/              # 前身项目 AI-Literature-Analyzer（保留存档）
 ```
 
-## 多用户模式（实验室 / 团队共享）
+## 多用户部署（实验室 / 团队 / 小规模公共访问）
 
-单机之外，同一个程序可切换为多用户服务器（登录、进度隔离、Docker 判题沙箱）：
+多用户版不是把本地服务改为 `0.0.0.0` 即可。安全部署必须同时具备登录、强制 Docker 判题、用户与全站 AI 配额、HTTPS、Secure Cookie、Host 白名单、私有文件权限和可恢复备份。CLI 会拒绝无 Docker 的多用户模式，也会拒绝无鉴权的非 loopback 监听。
+
+推荐让 PrepDojo 只监听 `127.0.0.1:8686`，由 Caddy 对外提供 HTTPS。完整的配置、systemd、Caddy、备份与恢复步骤见 [多用户 HTTPS 部署手册](deploy/README-server.md)。不要把开发服务器直接暴露到 Internet。
+
+判题镜像从仓库根目录构建：
 
 ```bash
-# data/config.yaml 中：
-# multiuser: true
-# registration: code            # off=仅管理员建号 / code=邀请码自助注册 / open=开放
-# registration_code: "LAB-XXX"
-# daily_limit_per_user: 200     # 每人每日 AI 调用上限
-# judge_docker_image: prepdojo-judge:latest   # 强烈建议：陌生代码跑在容器里
-.venv/bin/python -m prepdojo.cli serve --host 0.0.0.0 --multiuser
+docker build -f deploy/Dockerfile.judge -t prepdojo-judge:latest .
 ```
-
-判题沙箱镜像构建：`docker build -f deploy/Dockerfile.judge -t prepdojo-judge:latest deploy/`，
-部署与备份脚本见 `deploy/`（serve.sh / backup.sh，crontab 示例在 README-server.md）。
 
 ## 开发
 
 ```bash
-.venv/bin/python -m pytest tests/ -q        # 21 项测试
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m pytest tests/ -q
 .venv/bin/python scripts/gen_seeds.py       # 重新生成并验证种子题
 ```
 

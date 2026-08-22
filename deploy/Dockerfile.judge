@@ -1,9 +1,17 @@
 # PrepDojo 判题沙箱镜像：python3 + g++（含 bits/stdc++.h），无网络、只读运行
 # 构建：docker build -f deploy/Dockerfile.judge -t prepdojo-judge:latest .
-FROM python:3.12-slim
+# 基础镜像固定到多架构 index digest；升级时需显式更新 digest 并跑 Docker 集成测试。
+FROM python:3.12-slim@sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends g++ \
+# 固定 Debian 仓库快照，避免同一 Dockerfile 随滚动仓库变化。
+RUN sed -ri \
+      's#https?://deb.debian.org/debian-security#https://snapshot.debian.org/archive/debian-security/20260816T000000Z#g; s#https?://deb.debian.org/debian#https://snapshot.debian.org/archive/debian/20260816T000000Z#g' \
+      /etc/apt/sources.list.d/debian.sources \
+    && printf 'Acquire::Check-Valid-Until "false";\n' > /etc/apt/apt.conf.d/99snapshot \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends coreutils g++ \
+    && command -v timeout \
+    && command -v g++ \
     && rm -rf /var/lib/apt/lists/*
 
 # 判题代码只用标准库；不装任何其他依赖，保持镜像最小

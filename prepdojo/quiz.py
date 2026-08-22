@@ -2,10 +2,61 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Optional
 
 from .db import DB
 from .llm import LLMClient
+
+
+def _score(value: Any) -> float:
+    try:
+        number = float(value)
+        if not math.isfinite(number):
+            return 0.0
+        return round(max(0.0, min(10.0, number)), 1)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _strings(value: Any, limit: int = 20) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item[:1000] for item in value[:limit]
+            if isinstance(item, str) and item.strip()]
+
+
+def _text(value: Any, maximum: int) -> str:
+    return value[:maximum] if isinstance(value, str) else ""
+
+
+def _normalize_grade(value: Any) -> dict[str, Any]:
+    obj = value if isinstance(value, dict) else {}
+    per_point = []
+    for item in obj.get("per_point", []) if isinstance(obj.get("per_point"), list) else []:
+        if isinstance(item, dict):
+            per_point.append({
+                "point": _text(item.get("point"), 1000),
+                "covered": item.get("covered") is True,
+                "comment": _text(item.get("comment"), 2000),
+            })
+    return {
+        "score": _score(obj.get("score")),
+        "per_point": per_point[:20],
+        "missed": _strings(obj.get("missed")),
+        "extra_good": _strings(obj.get("extra_good")),
+        "overall": _text(obj.get("overall"), 4000),
+        "follow_up": _text(obj.get("follow_up"), 2000),
+    }
+
+
+def _normalize_followup(value: Any) -> dict[str, Any]:
+    obj = value if isinstance(value, dict) else {}
+    return {
+        "score": _score(obj.get("score")),
+        "overall": _text(obj.get("overall"), 4000),
+        "reference_answer": _text(obj.get("reference_answer"), 4000),
+    }
 
 INTERVIEWER_PERSONA = {
     "standard": "你的人设：一位在一线大厂工作多年的资深技术面试官，专业平和、就事论事，考察扎实。",
@@ -88,13 +139,9 @@ def grade_answer(llm: LLMClient, card: dict[str, Any], answer: str,
 
 请按 system 要求输出 JSON。"""
     out = llm.stream_json(grade_system(style), user, max_tokens=2000)
-    result = out["json"]
+    result = _normalize_grade(out.get("json"))
     if with_reasoning:
         return {"json": result, "reasoning": out["reasoning"]}
-    try:
-        result["score"] = round(float(result.get("score", 0)), 1)
-    except (TypeError, ValueError):
-        result["score"] = 0.0
     return result
 
 
@@ -118,11 +165,7 @@ def grade_followup(
 
 请按 system 要求输出 JSON。"""
     out = llm.stream_json(followup_system(style), user, max_tokens=1200)
-    result = out["json"]
+    result = _normalize_followup(out.get("json"))
     if with_reasoning:
         return {"json": result, "reasoning": out["reasoning"]}
-    try:
-        result["score"] = round(float(result.get("score", 0)), 1)
-    except (TypeError, ValueError):
-        result["score"] = 0.0
     return result

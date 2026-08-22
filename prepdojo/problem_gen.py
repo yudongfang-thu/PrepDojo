@@ -7,10 +7,11 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any, Callable, Optional
 
-from .judge import judge_submission
-from .llm import LLMClient
+from .judge import MAX_SUBMISSION_WALL_S, judge_submission
+from .llm import LLMCancelled, LLMClient
 
 GEN_SYSTEM = """（思考从简：不要反复推敲，直接构造题目并输出，把 token 留给最终 JSON。）
 你是资深算法面试官，为本地判题训练场生成一道可自动判定的编程题。
@@ -37,24 +38,84 @@ def _slug(title: str) -> str:
     return re.sub(r"[^a-zA-Z0-9]+", "-", title).strip("-")[:20].lower() or "gen"
 
 
+_GEN_FIELDS = {
+    "title", "difficulty", "tags", "statement", "time_limit_ms",
+    "reference_python", "test_inputs",
+}
+
+
+def _schema_errors(obj: Any) -> list[str]:
+    """严格校验模型输出，避免隐式转换把畸形 JSON 带入沙箱或数据库。"""
+    if not isinstance(obj, dict):
+        return ["顶层必须是 JSON object"]
+    errors: list[str] = []
+    missing = sorted(_GEN_FIELDS - set(obj))
+    extra = sorted(set(obj) - _GEN_FIELDS)
+    if missing:
+        errors.append("缺少字段: " + ", ".join(missing))
+    if extra:
+        errors.append("不允许额外字段: " + ", ".join(extra))
+
+    for key, max_len in (("title", 100), ("statement", 50_000),
+                         ("reference_python", 100_000)):
+        value = obj.get(key)
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"{key} 必须是非空字符串")
+        elif len(value) > max_len:
+            errors.append(f"{key} 长度不能超过 {max_len}")
+
+    difficulty = obj.get("difficulty")
+    if not isinstance(difficulty, str) or difficulty not in {"easy", "medium", "hard"}:
+        errors.append("difficulty 必须是 easy、medium 或 hard")
+
+    tags = obj.get("tags")
+    if not isinstance(tags, list) or not (1 <= len(tags) <= 10):
+        errors.append("tags 必须是包含 1-10 项的字符串数组")
+    elif any(not isinstance(tag, str) or not tag.strip() or len(tag) > 30 for tag in tags):
+        errors.append("tags 每项必须是长度 1-30 的非空字符串")
+
+    time_limit = obj.get("time_limit_ms")
+    if type(time_limit) is not int or not (100 <= time_limit <= 60_000):
+        errors.append("time_limit_ms 必须是 100-60000 的整数")
+
+    inputs = obj.get("test_inputs")
+    if not isinstance(inputs, list) or not (6 <= len(inputs) <= 10):
+        errors.append("test_inputs 必须是包含 6-10 项的字符串数组")
+    elif any(not isinstance(item, str) or len(item) > 1_000_000 for item in inputs):
+        errors.append("test_inputs 每项必须是长度不超过 1000000 的字符串")
+    return errors
+
+
 def _run_reference(code: str, inputs: list[str], time_limit_ms: int,
-                   docker_image: str = "") -> list[dict]:
+                   docker_image: str = "", cancel_check=None) -> list[dict]:
     """逐用例运行参考解（不短路），返回每用例 stdout/stderr/rc/耗时。"""
     import tempfile
     from pathlib import Path
 
     from .judge import _run_once
 
+    deadline = time.monotonic() + MAX_SUBMISSION_WALL_S
     with tempfile.TemporaryDirectory(prefix="prepdojo-gen-") as td:
         entry = Path(td) / "main.py"
         entry.write_text(code, encoding="utf-8")
         cmd = ["python3", str(entry)]
         results = []
         for s in inputs:
+            if cancel_check and cancel_check():
+                raise LLMCancelled("出题验证已取消")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                results.append({"stdout": "", "stderr": "整题验证总时间已超时",
+                                "rc": -1, "ms": int(MAX_SUBMISSION_WALL_S * 1000),
+                                "timed_out": True})
+                break
             out, err, rc, ms, timed_out = _run_once(
-                cmd, s, time_limit_ms / 1000, 512, docker_image=docker_image)
+                cmd, s, min(time_limit_ms / 1000, remaining), 512, cwd=td,
+                docker_image=docker_image, outer_timeout_s=remaining)
             results.append({"stdout": out, "stderr": err, "rc": rc,
                             "ms": ms, "timed_out": timed_out})
+            if rc != 0 or timed_out:
+                break
         return results
 
 
@@ -65,6 +126,8 @@ def generate_problem(
     on_event: Optional[Callable[[str, dict], None]] = None,
     fix_rounds: int = 2,
     docker_image: str = "",
+    cancel_check=None,
+    reference_runner=None,
 ) -> dict[str, Any]:
     """brief：用户的题目描述或出题要求。返回入库后的题目信息。
 
@@ -84,6 +147,8 @@ def generate_problem(
     obj: Optional[dict] = None
 
     for attempt in range(fix_rounds + 1):
+        if cancel_check and cancel_check():
+            raise LLMCancelled("出题任务已取消")
         if attempt == 0:
             out = llm.stream_json(GEN_SYSTEM, user_msg, max_tokens=30000,
                                   on_delta=lambda t, x: emit(
@@ -94,16 +159,28 @@ def generate_problem(
                                   on_delta=lambda t, x: emit(
                                       "thinking_delta" if t == "reasoning_delta" else "content_delta",
                                       text=x))
-        obj = out["json"]
-        if not (obj.get("reference_python") and obj.get("test_inputs")):
-            user_msg += "\n\n（上次输出缺少 reference_python 或 test_inputs，请补全后输出完整 JSON。）"
+        obj = out.get("json") if isinstance(out, dict) else None
+        schema_errors = _schema_errors(obj)
+        if schema_errors:
+            detail = "；".join(schema_errors)
+            emit("verify_fix", errors=detail[:400])
+            user_msg = f"""【出题需求】
+{brief}
+
+【上次生成的 JSON 不符合 schema】
+{detail}
+
+请修复后输出完整 JSON。"""
             continue
 
         emit("verify_start", attempt=attempt, n_cases=len(obj["test_inputs"]))
         inputs = [s if s.endswith("\n") else s + "\n"
                   for s in obj["test_inputs"]]
         tl = int(obj.get("time_limit_ms", 5000))
-        results = _run_reference(obj["reference_python"], inputs, tl, docker_image)
+        runner = reference_runner or _run_reference
+        results = runner(
+            obj["reference_python"], inputs, tl, docker_image=docker_image,
+            cancel_check=cancel_check)
         bad = [(i, r) for i, r in enumerate(results)
                if r["rc"] != 0 or r["timed_out"]]
         if not bad:  # 全部跑通：期望输出 = 参考解实际输出
