@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from prepdojo.chat import SandboxTools, build_problem_context  # noqa: E402
 from prepdojo.config import Config  # noqa: E402
 from prepdojo.db import DB  # noqa: E402
-from prepdojo.quiz import grade_system  # noqa: E402
+from prepdojo.quiz import grade_answer, grade_followup, grade_system  # noqa: E402
 from prepdojo.seed_loader import load_seed_dir  # noqa: E402
 from prepdojo.web.server import create_app  # noqa: E402
 
@@ -55,7 +55,8 @@ def test_tool_run_problem_case_ac_and_wa():
     r2 = json.loads(tools.run_problem_case("cp-003", bad, "python"))
     assert r2["verdict"] == "WA"
     wa_case = next(c for c in r2["cases"] if c["verdict"] == "WA")
-    assert "expected" in wa_case and "actual" in wa_case  # 事实对比信息齐全
+    # 工具只能看到判定事实，不能借回显代码探测隐藏输入/期望输出。
+    assert "expected" not in wa_case and "actual" not in wa_case
 
 
 def test_tool_dispatch_unknown():
@@ -78,6 +79,40 @@ def test_grader_styles():
     assert "资深技术面试官" in s_std
     assert "高标准" in s_strict and "放水" in s_strict
     assert "压力面" in s_press and "质疑" in s_press
+
+
+def test_grader_normalizes_score_even_with_reasoning():
+    class FakeLLM:
+        def stream_json(self, *_args, **_kwargs):
+            return {"json": {"score": 99, "per_point": "bad", "missed": "bad",
+                             "overall": {"unexpected": True}},
+                    "reasoning": "thinking"}
+
+    card = {"question": "q", "answer_points": ["p"]}
+    graded = grade_answer(FakeLLM(), card, "a", with_reasoning=True)
+    assert graded["json"]["score"] == 10.0
+    assert graded["json"]["per_point"] == [] and graded["json"]["missed"] == []
+    assert graded["reasoning"] == "thinking"
+
+    followup = grade_followup(
+        FakeLLM(), card, "why", "a", with_reasoning=True)
+    assert followup["json"]["score"] == 10.0
+
+
+def test_grader_rejects_nonfinite_scores_and_wrong_field_types():
+    from prepdojo.quiz import _normalize_grade
+
+    result = _normalize_grade({
+        "score": float("nan"),
+        "per_point": [{"point": {"bad": True}, "covered": "false",
+                       "comment": ["bad"]}],
+        "missed": [{"bad": True}, "有效遗漏"],
+        "overall": {"bad": True},
+    })
+    assert result["score"] == 0.0
+    assert result["per_point"] == [{"point": "", "covered": False, "comment": ""}]
+    assert result["missed"] == ["有效遗漏"]
+    assert result["overall"] == ""
 
 
 def test_chat_endpoint_needs_llm(tmp_path):

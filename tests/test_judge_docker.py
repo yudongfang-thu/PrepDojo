@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from prepdojo.judge import judge_submission  # noqa: E402
+from prepdojo.judge import JudgeInfrastructureError, judge_submission  # noqa: E402
 
 IMAGE = "prepdojo-judge:latest"
 
@@ -44,18 +44,22 @@ def test_docker_tle():
 
 
 def test_docker_cannot_read_host_secrets():
-    """容器内没有宿主 data/ 目录：读配置文件必须失败（防 key 外泄）。"""
+    """存在于宿主、但不在 /work 的文件，在容器内必须确实不可见。"""
+    repo = Path(__file__).resolve().parent.parent
+    candidates = [str(repo / "AGENTS.md"), str(repo / "data" / "config.yaml")]
+    assert Path(candidates[0]).exists()  # 确保测试不是拿不存在的文件自证安全
     code = (
         "from pathlib import Path\n"
-        "candidates = ['data/config.yaml', '/mnt/dataY/ydf/projects/PrepDojo/data/config.yaml']\n"
-        "for c in candidates:\n"
-        "    print(c, Path(c).exists())\n"
-        "raise SystemExit(1)\n"
+        f"candidates = {candidates!r}\n"
+        "found = [c for c in candidates if Path(c).exists()]\n"
+        "if found:\n"
+        "    print('HOST_SECRET_VISIBLE', found)\n"
+        "    raise SystemExit(42)\n"
+        "print('isolated')\n"
     )
-    res = judge_submission(code, "python", [{"input": "", "output": "never"}],
+    res = judge_submission(code, "python", [{"input": "", "output": "isolated"}],
                            docker_image=IMAGE)
-    # SystemExit(1) → RE；若文件真的存在打印出来也说明隔离失效，用例会因 verdict != RE 暴露
-    assert res.verdict == "RE", f"沙箱隔离疑似失效: {res.cases[0].stdout}"
+    assert res.verdict == "AC", f"沙箱隔离失效: {res.cases[0].stdout}"
 
 
 def test_docker_cpp_bits_header():
@@ -64,3 +68,46 @@ def test_docker_cpp_bits_header():
     res = judge_submission(code, "cpp", [{"input": "1 2\n", "output": "3\n"}],
                            docker_image=IMAGE)
     assert res.verdict == "AC", res.compile_error or res.cases[0].stderr
+
+
+def test_docker_missing_image_is_infrastructure_error():
+    with pytest.raises(JudgeInfrastructureError, match="Docker 无法启动"):
+        judge_submission(
+            "print(1)", "python", [{"input": "", "output": "1"}],
+            docker_image="prepdojo-image-that-must-not-exist:invalid",
+        )
+
+
+def test_docker_output_flood_is_bounded():
+    res = judge_submission(
+        "import os\nwhile True: os.write(1, b'x' * 65536)",
+        "python", [{"input": "", "output": ""}],
+        time_limit_ms=5000, docker_image=IMAGE,
+    )
+    assert res.verdict == "RE"
+    assert "输出超过" in res.cases[0].stderr
+
+
+def test_docker_oom_is_mle():
+    code = "chunks=[]\nwhile True: chunks.append(bytearray(8 * 1024 * 1024))"
+    res = judge_submission(
+        code, "python", [{"input": "", "output": ""}],
+        time_limit_ms=5000, mem_limit_mb=64, docker_image=IMAGE,
+    )
+    assert res.verdict == "MLE", res.cases[0].stderr
+
+
+def test_docker_workdir_total_is_bounded():
+    code = (
+        "chunk = b'x' * (8 * 1024 * 1024)\n"
+        "for i in range(10):\n"
+        "    with open(f'f{i}', 'wb') as f:\n"
+        "        f.write(chunk)\n"
+        "print('finished')\n"
+    )
+    res = judge_submission(
+        code, "python", [{"input": "", "output": "finished"}],
+        time_limit_ms=5000, mem_limit_mb=128, docker_image=IMAGE,
+    )
+    assert res.verdict == "RE"
+    assert "/work 总量超过" in res.cases[0].stderr

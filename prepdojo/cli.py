@@ -11,11 +11,15 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
-from .config import SEEDS_DIR, Config, ensure_dirs, load_config
+from .config import SEEDS_DIR, Config, ConfigError, ensure_dirs, load_config
 from .db import DB
 
 
@@ -90,7 +94,61 @@ def cmd_quiz(cfg: Config, args: argparse.Namespace) -> None:
         print(f"遗漏：{result.get('missed')}")
 
 
+def _is_loopback_host(host: str) -> bool:
+    """判断监听地址是否只可由本机访问。"""
+    normalized = host.strip().strip("[]").lower()
+    if normalized == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _docker_preflight(image: str) -> None:
+    """确认 Docker CLI、daemon 和配置的判题镜像均可用。"""
+    if not shutil.which("docker"):
+        raise ConfigError("多用户模式必须使用 Docker，但系统中找不到 docker 命令")
+    checks = (
+        (["docker", "info"], "Docker daemon 不可用"),
+        (["docker", "image", "inspect", image], f"判题镜像不存在: {image}"),
+    )
+    for command, message in checks:
+        try:
+            result = subprocess.run(
+                command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                text=True, timeout=15, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ConfigError(f"{message}: {exc}") from exc
+        if result.returncode != 0:
+            detail = (result.stderr or "").strip().splitlines()
+            suffix = f"（{detail[-1][:200]}）" if detail else ""
+            raise ConfigError(message + suffix)
+
+
+def _validate_serve_mode(cfg: Config, host: str, multiuser: bool) -> None:
+    loopback = _is_loopback_host(host)
+    if not loopback and not multiuser:
+        raise ConfigError("非 loopback 地址禁止单用户模式；请配置 multiuser: true")
+    if multiuser and not cfg.judge_docker_image:
+        raise ConfigError("多用户模式必须配置 judge.docker_image，禁止在宿主机执行用户代码")
+    if multiuser and not cfg.secure_cookie:
+        raise ConfigError("多用户模式必须设置 server.secure_cookie: true 并通过 HTTPS 访问")
+    if multiuser and "*" in cfg.allowed_hosts:
+        raise ConfigError("多用户模式禁止 server.allowed_hosts 使用通配符 *")
+    if not loopback:
+        if all(_is_loopback_host(item) for item in cfg.allowed_hosts):
+            raise ConfigError("非 loopback 部署必须在 server.allowed_hosts 中明确填写访问域名或服务器 IP")
+    if multiuser:
+        _docker_preflight(cfg.judge_docker_image)
+
+
 def cmd_serve(cfg: Config, args: argparse.Namespace) -> None:
+    if not 1 <= args.port <= 65535:
+        raise ConfigError("serve 端口必须是 1..65535")
+    multiuser = args.multiuser or cfg.multiuser
+    _validate_serve_mode(cfg, args.host, multiuser)
     ensure_dirs()
     import uvicorn
 
@@ -102,7 +160,6 @@ def cmd_serve(cfg: Config, args: argparse.Namespace) -> None:
     if db.stats()["problems"] == 0:
         n = load_seed_dir(db, SEEDS_DIR / "coding")
         print(f"[首次启动] 已自动导入 {n} 道种子代码题")
-    multiuser = args.multiuser or cfg.multiuser
     if multiuser:
         users = db.list_users()
         if not users:
@@ -113,7 +170,12 @@ def cmd_serve(cfg: Config, args: argparse.Namespace) -> None:
         print("[提示] 未配置 LLM API key：判题/学习可用，AI 点评/讲解/八股打分不可用。"
               "配置方法见 data/config.yaml 或 README。")
     mode = "多用户（需登录）" if multiuser else "单机模式"
-    print(f"\n  PrepDojo 已启动: http://localhost:{args.port}  [{mode}]\n")
+    display_host = "localhost" if _is_loopback_host(args.host) else args.host
+    if multiuser:
+        print(f"\n  PrepDojo 内部监听: http://{display_host}:{args.port}  [{mode}]"
+              "\n  请通过配置好的 HTTPS 反向代理域名访问。\n")
+    else:
+        print(f"\n  PrepDojo 已启动: http://{display_host}:{args.port}  [{mode}]\n")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
 
 
@@ -124,11 +186,13 @@ def _read_password() -> str:
 
     env = os.environ.get("PREPDOJO_USER_PASSWORD")
     if env:
+        if len(env) < 8:
+            raise ConfigError("PREPDOJO_USER_PASSWORD 至少需要 8 个字符")
         return env
     while True:
         a = getpass.getpass("设置密码: ")
-        if len(a) < 4:
-            print("密码至少 4 位，请重试。")
+        if len(a) < 8:
+            print("密码至少 8 位，请重试。")
             continue
         b = getpass.getpass("再输入一次: ")
         if a != b:
@@ -205,10 +269,20 @@ def main(argv: list[str] | None = None) -> int:
     u_del.add_argument("name")
 
     args = parser.parse_args(argv)
-    cfg = load_config()
     handlers = {"seed": cmd_seed, "ingest": cmd_ingest, "quiz": cmd_quiz,
                 "serve": cmd_serve, "stats": cmd_stats, "user": cmd_user}
-    handlers[args.command](cfg, args)
+    old_umask = os.umask(0o077)
+    try:
+        # 所有命令都可能读写数据库；先建立 0700 数据目录和 0600 配置，
+        # 避免 `seed` / `stats` 等非 serve 命令创建出可被其他用户读取的文件。
+        ensure_dirs()
+        cfg = load_config()
+        handlers[args.command](cfg, args)
+    except ConfigError as exc:
+        print(f"配置错误：{exc}", file=sys.stderr)
+        return 2
+    finally:
+        os.umask(old_umask)
     return 0
 
 

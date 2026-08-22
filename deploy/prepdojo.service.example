@@ -1,0 +1,33 @@
+[Unit]
+Description=PrepDojo multi-user service
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=prepdojo
+Group=prepdojo
+SupplementaryGroups=docker
+WorkingDirectory=/opt/prepdojo
+Environment=PREPDOJO_DATA_DIR=/var/lib/prepdojo
+Environment=TMPDIR=/var/lib/prepdojo/tmp
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStartPre=/usr/bin/install -d -m 0700 /var/lib/prepdojo/tmp
+ExecStartPre=/usr/bin/docker info
+ExecStart=/opt/prepdojo/.venv/bin/python -m prepdojo.cli serve --host 127.0.0.1 --port 8686 --multiuser
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+UMask=0077
+StateDirectory=prepdojo
+StateDirectoryMode=0700
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/prepdojo
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

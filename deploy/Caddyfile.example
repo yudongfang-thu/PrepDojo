@@ -1,0 +1,17 @@
+# 将域名替换为真实域名，并确保 DNS 已指向服务器。Caddy 会自动申请和续期 TLS。
+prepdojo.example.com {
+    encode zstd gzip
+
+    request_body {
+        max_size 512KB
+    }
+
+    reverse_proxy 127.0.0.1:8686
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+}
