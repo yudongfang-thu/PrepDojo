@@ -12,6 +12,34 @@ import resource
 import sys
 
 
+def _current_uid_task_count() -> int:
+    """返回 Linux 中当前 UID 已占用的进程/线程槽位数。"""
+    uid = os.getuid()
+    total = 0
+    try:
+        processes = os.scandir("/proc")
+    except OSError:
+        return 0
+    with processes:
+        for process in processes:
+            if not process.name.isdigit():
+                continue
+            try:
+                if process.stat(follow_symlinks=False).st_uid != uid:
+                    continue
+                with os.scandir(f"/proc/{process.name}/task") as tasks:
+                    total += sum(task.name.isdigit() for task in tasks)
+            except OSError:
+                # 进程可能在枚举期间退出；忽略该瞬时竞态。
+                continue
+    return total
+
+
+def _nproc_limit(additional: int) -> int:
+    """RLIMIT_NPROC 按 UID 计数，因此额度需叠加该 UID 的现有线程。"""
+    return max(0, _current_uid_task_count()) + additional
+
+
 def _set_limit(kind: int, soft: int, hard: int) -> None:
     try:
         _, current_hard = resource.getrlimit(kind)
@@ -40,7 +68,8 @@ def main(argv: list[str]) -> int:
 
     if sys.platform != "darwin":
         _set_limit(resource.RLIMIT_AS, mem_mb << 20, mem_mb << 20)
-        _set_limit(resource.RLIMIT_NPROC, nproc, nproc)
+        process_limit = _nproc_limit(nproc)
+        _set_limit(resource.RLIMIT_NPROC, process_limit, process_limit)
     _set_limit(resource.RLIMIT_CPU, cpu_s, cpu_s + 1)
     _set_limit(resource.RLIMIT_FSIZE, file_bytes, file_bytes)
     _set_limit(resource.RLIMIT_CORE, 0, 0)
