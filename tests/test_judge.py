@@ -172,6 +172,13 @@ def test_docker_paths_under_symlinked_workdir_are_remapped(tmp_path):
         "g++", "-o", "/work/main_bin", "/work/main.cpp"]
 
 
+def test_nproc_limit_accounts_for_existing_uid_threads(monkeypatch):
+    from prepdojo import _sandbox_exec
+
+    monkeypatch.setattr(_sandbox_exec, "_current_uid_task_count", lambda: 130)
+    assert _sandbox_exec._nproc_limit(64) == 194
+
+
 def test_outer_budget_can_be_stricter_than_case_limit():
     started = time.monotonic()
     _, _, _, _, timed_out = judge_module._run_once(
