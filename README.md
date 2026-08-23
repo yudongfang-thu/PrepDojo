@@ -141,7 +141,3 @@ docker build -f deploy/Dockerfile.judge -t prepdojo-judge:latest .
 ## License
 
 MIT
-
----
-
-*PrepDojo 是本仓库前身项目 AI-Literature-Analyzer（AI 文献分析工具）的后继者，旧代码完整保留在 [`legacy/`](legacy/)。*
