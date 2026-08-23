@@ -2,6 +2,8 @@
  "id": "cp-007",
  "title": "滑动窗口最大值",
  "difficulty": "hard",
+ "leetcode_id": 239,
+ "interview_priority": 2,
  "tags": [
   "队列",
   "单调队列",

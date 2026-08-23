@@ -33,6 +33,13 @@ def test_scores_difficulty_verdict_and_tool_trace_use_safe_helpers():
     assert 'coachRender("tool", toolStartText(ev, 40), "tool")' in APP
 
 
+def test_problem_list_shows_reference_and_interview_priority():
+    assert "参考 LC" in INDEX
+    assert "interviewPriorityInfo" in APP
+    assert "p.leetcode_id" in APP
+    assert "p.interview_priority" in APP
+
+
 def test_mode_privacy_and_registration_enter_contracts():
     assert 'class="card hidden" id="card-mykey"' in INDEX
     assert 'classList.toggle("hidden", !multiuser)' in APP

@@ -2,6 +2,8 @@
  "id": "cp-016",
  "title": "移动零",
  "difficulty": "easy",
+ "leetcode_id": 283,
+ "interview_priority": 2,
  "tags": [
   "数组",
   "双指针"

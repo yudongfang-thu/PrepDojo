@@ -66,6 +66,8 @@ CREATE TABLE IF NOT EXISTS coding_problems (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   difficulty TEXT NOT NULL,
+  leetcode_id INTEGER,
+  interview_priority INTEGER NOT NULL DEFAULT 3,
   tags TEXT NOT NULL,
   statement TEXT NOT NULL,
   time_limit_ms INTEGER NOT NULL DEFAULT 5000,
@@ -193,6 +195,14 @@ def _validated_problem(
     if not isinstance(difficulty, str) or difficulty not in _DIFFICULTIES:
         raise ValueError("代码题 difficulty 必须是 easy、medium 或 hard")
 
+    leetcode_id = p.get("leetcode_id")
+    if (leetcode_id is not None
+            and (type(leetcode_id) is not int or leetcode_id <= 0)):
+        raise ValueError("代码题 leetcode_id 必须是正整数或 null")
+    interview_priority = p.get("interview_priority", 3)
+    if type(interview_priority) is not int or not 1 <= interview_priority <= 3:
+        raise ValueError("代码题 interview_priority 必须是 1-3 的整数")
+
     tags = p.get("tags")
     if not isinstance(tags, list) or not 1 <= len(tags) <= 20:
         raise ValueError("代码题 tags 必须是包含 1-20 项的字符串数组")
@@ -235,6 +245,8 @@ def _validated_problem(
 
     clean_problem = {
         "id": pid, "title": title, "difficulty": difficulty,
+        "leetcode_id": leetcode_id,
+        "interview_priority": interview_priority,
         "tags": clean_tags, "statement": statement,
         "time_limit_ms": time_limit, "mem_limit_mb": mem_limit,
         "languages": clean_languages,
@@ -377,6 +389,13 @@ class DB:
         if "validation_error" not in problem_cols:
             self.conn.execute(
                 "ALTER TABLE coding_problems ADD COLUMN validation_error TEXT")
+        if "leetcode_id" not in problem_cols:
+            self.conn.execute(
+                "ALTER TABLE coding_problems ADD COLUMN leetcode_id INTEGER")
+        if "interview_priority" not in problem_cols:
+            self.conn.execute(
+                "ALTER TABLE coding_problems ADD COLUMN interview_priority "
+                "INTEGER NOT NULL DEFAULT 3")
         for row in self.conn.execute("SELECT * FROM coding_problems").fetchall():
             case_rows = self.conn.execute(
                 "SELECT input, expected_output, is_sample FROM test_cases "
@@ -385,6 +404,8 @@ class DB:
                 _, _, revision = _validated_problem(
                     {"id": row["id"], "title": row["title"],
                      "difficulty": row["difficulty"], "tags": json.loads(row["tags"]),
+                     "leetcode_id": row["leetcode_id"],
+                     "interview_priority": row["interview_priority"],
                      "statement": row["statement"],
                      "time_limit_ms": row["time_limit_ms"],
                      "mem_limit_mb": row["mem_limit_mb"],
@@ -1038,14 +1059,18 @@ class DB:
             try:
                 self.conn.execute("BEGIN IMMEDIATE")
                 self.conn.execute(
-                    "INSERT INTO coding_problems(id, title, difficulty, tags, statement, time_limit_ms, "
-                    "mem_limit_mb, languages, revision, created_at) VALUES(?,?,?,?,?,?,?,?,?,?) "
+                    "INSERT INTO coding_problems(id, title, difficulty, leetcode_id, "
+                    "interview_priority, tags, statement, time_limit_ms, mem_limit_mb, "
+                    "languages, revision, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) "
                     "ON CONFLICT(id) DO UPDATE SET title=excluded.title, difficulty=excluded.difficulty, "
+                    "leetcode_id=excluded.leetcode_id, "
+                    "interview_priority=excluded.interview_priority, "
                     "tags=excluded.tags, statement=excluded.statement, "
                     "time_limit_ms=excluded.time_limit_ms, mem_limit_mb=excluded.mem_limit_mb, "
                     "languages=excluded.languages, revision=excluded.revision, "
                     "valid=1, validation_error=NULL",
                     (clean["id"], clean["title"], clean["difficulty"],
+                     clean["leetcode_id"], clean["interview_priority"],
                      json.dumps(clean["tags"], ensure_ascii=False), clean["statement"],
                      clean["time_limit_ms"], clean["mem_limit_mb"],
                      json.dumps(clean["languages"]), revision, _now()))
@@ -1065,12 +1090,14 @@ class DB:
     def list_problems(self, user_id: str = "local") -> list[dict[str, Any]]:
         rows = self.execute(
             "SELECT p.*, (SELECT COUNT(*) FROM test_cases t WHERE t.problem_id=p.id) AS n_cases "
-            "FROM coding_problems p ORDER BY p.id"
+            "FROM coding_problems p ORDER BY p.interview_priority, p.id"
         ).fetchall()
         status = self.problem_status_map(user_id)
         return [
             {
                 "id": r["id"], "title": r["title"], "difficulty": r["difficulty"],
+                "leetcode_id": r["leetcode_id"],
+                "interview_priority": r["interview_priority"],
                 "tags": _json_string_list(r["tags"]), "n_cases": r["n_cases"],
                 "valid": bool(r["valid"]),
                 "validation_error": r["validation_error"],
@@ -1115,6 +1142,8 @@ class DB:
     def _problem_payload(r: sqlite3.Row, cases: list[sqlite3.Row]) -> dict[str, Any]:
         return {
             "id": r["id"], "title": r["title"], "difficulty": r["difficulty"],
+            "leetcode_id": r["leetcode_id"],
+            "interview_priority": r["interview_priority"],
             "tags": _json_string_list(r["tags"]), "statement": r["statement"],
             "time_limit_ms": r["time_limit_ms"], "mem_limit_mb": r["mem_limit_mb"],
             "languages": _json_string_list(r["languages"]),

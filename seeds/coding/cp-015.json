@@ -2,6 +2,8 @@
  "id": "cp-015",
  "title": "二叉树的最大深度",
  "difficulty": "easy",
+ "leetcode_id": 104,
+ "interview_priority": 2,
  "tags": [
   "二叉树",
   "递归"

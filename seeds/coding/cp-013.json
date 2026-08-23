@@ -2,6 +2,8 @@
  "id": "cp-013",
  "title": "爬楼梯",
  "difficulty": "easy",
+ "leetcode_id": 70,
+ "interview_priority": 2,
  "tags": [
   "动态规划"
  ],

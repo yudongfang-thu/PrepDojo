@@ -2,6 +2,8 @@
  "id": "cp-002",
  "title": "最长无重复字符子串",
  "difficulty": "medium",
+ "leetcode_id": 3,
+ "interview_priority": 1,
  "tags": [
   "字符串",
   "滑动窗口",

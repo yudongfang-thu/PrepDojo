@@ -2,6 +2,8 @@
  "id": "cp-005",
  "title": "升序数组二分查找",
  "difficulty": "easy",
+ "leetcode_id": 704,
+ "interview_priority": 1,
  "tags": [
   "二分查找"
  ],

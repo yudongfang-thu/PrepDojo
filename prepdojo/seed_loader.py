@@ -21,6 +21,8 @@ def load_seed_dir(db, seed_dir: Path) -> int:
             "id": obj["id"],
             "title": obj["title"],
             "difficulty": obj["difficulty"],
+            "leetcode_id": obj.get("leetcode_id"),
+            "interview_priority": obj.get("interview_priority", 3),
             "tags": obj["tags"],
             "statement": obj["statement"],
             "time_limit_ms": obj.get("time_limit_ms", 5000),

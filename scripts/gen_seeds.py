@@ -18,6 +18,31 @@ from prepdojo.judge import judge_submission  # noqa: E402
 
 P = []  # (id, title, difficulty, tags, statement, inputs, ref_py, ref_cpp)
 
+# 仅标记算法训练上的对应关系；题面和用例仍是 PrepDojo 自写变式。
+# 优先级：1=必刷，2=高频，3=补充。
+INTERVIEW_META = {
+    "cp-001": (167, 1),
+    "cp-002": (3, 1),
+    "cp-003": (53, 2),
+    "cp-004": (25, 2),
+    "cp-005": (704, 1),
+    "cp-006": (20, 1),
+    "cp-007": (239, 2),
+    "cp-008": (102, 1),
+    "cp-009": (200, 2),
+    "cp-010": (56, 1),
+    "cp-011": (146, 2),
+    "cp-012": (912, 2),
+    "cp-013": (70, 2),
+    "cp-014": (322, 2),
+    "cp-015": (104, 2),
+    "cp-016": (283, 2),
+    "cp-017": (210, 2),
+    "cp-018": (347, 2),
+    "cp-019": (5, 3),
+    "cp-020": (1926, 2),
+}
+
 P.append(dict(
     id="cp-001", title="有序数组两数之和", difficulty="easy", tags=["数组", "双指针", "哈希表"],
     statement="""给定一个 **升序** 整数数组和一个目标值 target，找出两个数使其和恰好等于 target。
@@ -767,8 +792,11 @@ def main() -> int:
         statement = p["statement"]
         if p["id"] in SAMPLE_EXPLAIN:
             statement += "\n\n【样例解释】\n" + SAMPLE_EXPLAIN[p["id"]]
+        leetcode_id, interview_priority = INTERVIEW_META[p["id"]]
         obj = {
             "id": p["id"], "title": p["title"], "difficulty": p["difficulty"],
+            "leetcode_id": leetcode_id,
+            "interview_priority": interview_priority,
             "tags": p["tags"], "statement": statement,
             "languages": ["python", "cpp"],
             "test_cases": cases,

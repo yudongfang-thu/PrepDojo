@@ -72,6 +72,12 @@ const safeLanguage = (value, fallback = "python") =>
 function difficultyInfo(value) {
   return DIFFICULTIES[displayText(value)] || { cls: "", label: "未知" };
 }
+function interviewPriorityInfo(value) {
+  const priority = Number(value);
+  if (priority === 1) return { cls: "priority-1", label: "必刷" };
+  if (priority === 2) return { cls: "priority-2", label: "高频" };
+  return { cls: "priority-3", label: "补充" };
+}
 function verdictInfo(value) {
   const candidate = displayText(value).toUpperCase();
   const text = VERDICTS.has(candidate) ? candidate : "UNKNOWN";
@@ -85,7 +91,8 @@ function makeEl(tag, { className = "", text = "", title = "" } = {}) {
   return node;
 }
 function addBadge(parent, value, kind = "tag") {
-  const info = kind === "difficulty" ? difficultyInfo(value) : null;
+  const info = kind === "difficulty" ? difficultyInfo(value)
+    : kind === "priority" ? interviewPriorityInfo(value) : null;
   const badge = makeEl("span", {
     className: `badge${info && info.cls ? ` ${info.cls}` : kind === "tag" ? " tag" : ""}`,
     text: info ? info.label : value,
@@ -333,6 +340,13 @@ async function loadProblems() {
       : attempts > 0
         ? makeEl("span", { text: "❌", title: `未通过（${attempts} 次提交）` })
         : makeEl("span", { className: "muted", text: "⬜", title: "没做过" }));
+    const priorityCell = makeEl("td");
+    addBadge(priorityCell, p.interview_priority, "priority");
+    const leetcodeId = Number(p.leetcode_id);
+    const leetcodeCell = makeEl("td", {
+      className: "muted",
+      text: Number.isInteger(leetcodeId) && leetcodeId > 0 ? `LC ${leetcodeId}` : "—",
+    });
     const idCell = makeEl("td", { className: "muted", text: pid });
     const titleCell = makeEl("td", { text: p.title });
     const difficultyCell = makeEl("td");
@@ -350,7 +364,8 @@ async function loadProblems() {
       });
       actionCell.appendChild(del);
     }
-    tr.append(statusCell, idCell, titleCell, difficultyCell, tagsCell, countCell, actionCell);
+    tr.append(statusCell, priorityCell, leetcodeCell, idCell, titleCell,
+      difficultyCell, tagsCell, countCell, actionCell);
     tr.addEventListener("click", () => openProblem(pid));
     tb.appendChild(tr);
   }
@@ -376,6 +391,9 @@ async function openProblem(pid) {
   $("pd-title").textContent = `${displayText(currentProblem.id)} · ${displayText(currentProblem.title)}`;
   const badges = $("pd-badges");
   badges.replaceChildren();
+  addBadge(badges, currentProblem.interview_priority, "priority");
+  const leetcodeId = Number(currentProblem.leetcode_id);
+  if (Number.isInteger(leetcodeId) && leetcodeId > 0) addBadge(badges, `参考 LC ${leetcodeId}`);
   addBadge(badges, currentProblem.difficulty, "difficulty");
   asArray(currentProblem.tags).forEach(tag => addBadge(badges, tag));
   let st = displayText(currentProblem.statement);

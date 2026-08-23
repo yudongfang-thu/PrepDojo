@@ -2,6 +2,8 @@
  "id": "cp-018",
  "title": "前 K 个高频元素",
  "difficulty": "medium",
+ "leetcode_id": 347,
+ "interview_priority": 2,
  "tags": [
   "哈希表",
   "堆"

@@ -2,6 +2,8 @@
  "id": "cp-001",
  "title": "有序数组两数之和",
  "difficulty": "easy",
+ "leetcode_id": 167,
+ "interview_priority": 1,
  "tags": [
   "数组",
   "双指针",

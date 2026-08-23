@@ -2,6 +2,8 @@
  "id": "cp-003",
  "title": "最大子数组和",
  "difficulty": "medium",
+ "leetcode_id": 53,
+ "interview_priority": 2,
  "tags": [
   "数组",
   "动态规划"

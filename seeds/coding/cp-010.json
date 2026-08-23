@@ -2,6 +2,8 @@
  "id": "cp-010",
  "title": "合并区间",
  "difficulty": "medium",
+ "leetcode_id": 56,
+ "interview_priority": 1,
  "tags": [
   "排序",
   "区间"

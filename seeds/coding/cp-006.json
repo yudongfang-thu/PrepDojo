@@ -2,6 +2,8 @@
  "id": "cp-006",
  "title": "括号序列有效性",
  "difficulty": "easy",
+ "leetcode_id": 20,
+ "interview_priority": 1,
  "tags": [
   "栈"
  ],

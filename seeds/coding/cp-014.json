@@ -2,6 +2,8 @@
  "id": "cp-014",
  "title": "零钱兑换",
  "difficulty": "medium",
+ "leetcode_id": 322,
+ "interview_priority": 2,
  "tags": [
   "动态规划",
   "完全背包"

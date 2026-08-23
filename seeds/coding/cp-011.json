@@ -2,6 +2,8 @@
  "id": "cp-011",
  "title": "LRU 缓存",
  "difficulty": "medium",
+ "leetcode_id": 146,
+ "interview_priority": 2,
  "tags": [
   "设计",
   "哈希表",

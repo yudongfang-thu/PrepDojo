@@ -2,6 +2,8 @@
  "id": "cp-004",
  "title": "K 个一组翻转序列",
  "difficulty": "medium",
+ "leetcode_id": 25,
+ "interview_priority": 2,
  "tags": [
   "链表",
   "模拟"

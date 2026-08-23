@@ -33,8 +33,11 @@ def test_problems_and_detail(tmp_path):
     c, _ = make_client(tmp_path)
     ps = c.get("/api/problems").json()["problems"]
     assert len(ps) == 20
+    assert [p["interview_priority"] for p in ps] == sorted(
+        p["interview_priority"] for p in ps)
     d = c.get("/api/problems/cp-003").json()
     assert "statement" in d and d["n_cases"] >= 5
+    assert d["leetcode_id"] == 53 and d["interview_priority"] == 2
     assert c.get("/api/problems/cp-xxx").status_code == 404
 
 

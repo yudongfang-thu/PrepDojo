@@ -36,11 +36,12 @@ def test_problem_upsert_and_submission(tmp_path):
     db.upsert_problem(
         {"id": "cp-999", "title": "测试题", "difficulty": "easy", "tags": ["数组"],
          "statement": "题面", "time_limit_ms": 3000, "mem_limit_mb": 256,
-         "languages": ["python"]},
+         "languages": ["python"], "leetcode_id": 1, "interview_priority": 1},
         [{"input": "1\n", "output": "1\n", "sample": True}],
     )
     p = db.get_problem("cp-999")
     assert p["n_cases"] == 1 and p["samples"][0]["input"] == "1\n"
+    assert p["leetcode_id"] == 1 and p["interview_priority"] == 1
     assert db.list_problems()[0]["n_cases"] == 1
     sid = db.record_submission("cp-999", "python", "print(1)", "AC",
                                {"cases": []}, 12)
@@ -56,6 +57,85 @@ def test_seed_loading(tmp_path):
     p = db.get_problem("cp-001")
     assert p and p["n_cases"] >= 5
     assert p["samples"], "第一用例应标记为样例"
+    assert p["leetcode_id"] == 167 and p["interview_priority"] == 1
+    problems = db.list_problems()
+    priorities = [item["interview_priority"] for item in problems]
+    assert priorities == sorted(priorities)
+    assert priorities.count(1) == 6
+    assert priorities.count(2) == 13
+    assert priorities.count(3) == 1
+
+
+def test_problem_priority_sort_and_metadata_validation(tmp_path):
+    import pytest
+
+    db = make_db(tmp_path)
+    cases = [{"input": "1\n", "output": "1\n"}]
+    base = {"title": "排序题", "difficulty": "easy", "tags": ["数组"],
+            "statement": "输出输入", "languages": ["python"]}
+    db.upsert_problem({**base, "id": "cp-low"}, cases)
+    db.upsert_problem({**base, "id": "cp-high", "leetcode_id": 704,
+                       "interview_priority": 1}, cases)
+    db.upsert_problem({**base, "id": "cp-mid", "leetcode_id": 53,
+                       "interview_priority": 2}, cases)
+
+    problems = db.list_problems()
+    assert [item["id"] for item in problems] == ["cp-high", "cp-mid", "cp-low"]
+    assert problems[-1]["leetcode_id"] is None
+    assert problems[-1]["interview_priority"] == 3
+
+    with pytest.raises(ValueError, match="leetcode_id"):
+        db.upsert_problem({**base, "id": "cp-bad-lc", "leetcode_id": 0}, cases)
+    with pytest.raises(ValueError, match="interview_priority"):
+        db.upsert_problem({**base, "id": "cp-bad-priority",
+                           "interview_priority": 4}, cases)
+
+
+def test_problem_metadata_migrates_existing_database(tmp_path):
+    import sqlite3
+
+    db_path = tmp_path / "old.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript("""
+        CREATE TABLE coding_problems (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          difficulty TEXT NOT NULL,
+          tags TEXT NOT NULL,
+          statement TEXT NOT NULL,
+          time_limit_ms INTEGER NOT NULL DEFAULT 5000,
+          mem_limit_mb INTEGER NOT NULL DEFAULT 512,
+          languages TEXT NOT NULL,
+          revision TEXT NOT NULL DEFAULT '',
+          valid INTEGER NOT NULL DEFAULT 1,
+          validation_error TEXT,
+          created_at TEXT NOT NULL
+        );
+        CREATE TABLE test_cases (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          problem_id TEXT NOT NULL REFERENCES coding_problems(id),
+          idx INTEGER NOT NULL,
+          input TEXT NOT NULL,
+          expected_output TEXT NOT NULL,
+          is_sample INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO coding_problems
+          (id, title, difficulty, tags, statement, languages, created_at)
+        VALUES
+          ('cp-old', '旧题', 'easy', '["数组"]', '输出输入', '["python"]',
+           '2026-01-01T00:00:00+00:00');
+        INSERT INTO test_cases
+          (problem_id, idx, input, expected_output, is_sample)
+        VALUES ('cp-old', 0, '1\n', '1\n', 1);
+    """)
+    conn.commit()
+    conn.close()
+
+    db = DB(db_path)
+    problem = db.get_problem("cp-old")
+    assert problem["leetcode_id"] is None
+    assert problem["interview_priority"] == 3
+    assert problem["valid"] is True
 
 
 def test_write_persists_across_processes(tmp_path):
@@ -181,7 +261,8 @@ def test_problem_schema_and_revision_isolate_old_results(tmp_path):
     assert db.problem_status_map()["cp-rev"]["ever_ac"] is True
 
     # 展示元数据不改变判定版本。
-    db.upsert_problem({**problem, "tags": ["新标签"], "title": "新标题"}, cases)
+    db.upsert_problem({**problem, "tags": ["新标签"], "title": "新标题",
+                       "leetcode_id": 704, "interview_priority": 1}, cases)
     assert db.get_problem("cp-rev")["revision"] == first_revision
     assert db.problem_status_map()["cp-rev"]["ever_ac"] is True
 

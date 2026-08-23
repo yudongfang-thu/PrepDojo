@@ -2,6 +2,8 @@
  "id": "cp-020",
  "title": "迷宫最短步数",
  "difficulty": "medium",
+ "leetcode_id": 1926,
+ "interview_priority": 2,
  "tags": [
   "图",
   "广度优先搜索"

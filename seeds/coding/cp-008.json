@@ -2,6 +2,8 @@
  "id": "cp-008",
  "title": "二叉树每层节点和",
  "difficulty": "medium",
+ "leetcode_id": 102,
+ "interview_priority": 1,
  "tags": [
   "二叉树",
   "广度优先搜索"

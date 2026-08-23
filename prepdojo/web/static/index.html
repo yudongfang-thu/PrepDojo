@@ -83,6 +83,9 @@ th { color:var(--muted); font-weight:500; }
 .badge.medium { color:var(--amber); background:color-mix(in srgb, var(--amber) 12%, transparent); }
 .badge.hard { color:var(--red); background:color-mix(in srgb, var(--red) 12%, transparent); }
 .badge.tag { color:var(--purple); background:color-mix(in srgb, var(--purple) 10%, transparent); }
+.badge.priority-1 { color:var(--accent); background:color-mix(in srgb, var(--accent) 14%, transparent); }
+.badge.priority-2 { color:var(--amber); background:color-mix(in srgb, var(--amber) 12%, transparent); }
+.badge.priority-3 { color:var(--muted); background:var(--panel2); }
 #statement { font-size:14.5px; line-height:1.75; white-space:pre-wrap; }
 .toolbar { display:flex; gap:10px; align-items:center; margin:12px 0; flex-wrap:wrap; }
 select, button.btn { background:var(--panel2); color:var(--text); border:1px solid var(--border);
@@ -284,10 +287,10 @@ li.CodeMirror-hint-active.hint-kw { color: #fff; }
         <span class="muted" id="problem-stat-brief" style="font-size:12.5px"></span>
       </div>
       <table id="problem-table"><thead>
-        <tr><th>状态</th><th>编号</th><th>题目</th><th>难度</th><th>标签</th><th>用例数</th></tr>
+        <tr><th>状态</th><th>优先级</th><th>参考 LC</th><th>编号</th><th>题目</th><th>难度</th><th>标签</th><th>用例数</th><th>操作</th></tr>
       </thead><tbody></tbody></table>
       <p class="muted" style="margin-top:14px">判题对错一律以测试用例为准；AI 只做点评。
-        题面与用例均为本仓库自写。接入自己的 LeetCode 题记录见 README（BYO 模式）。</p>
+        题面与用例均为本仓库自写；“参考 LC”只表示算法训练上的对应关系。</p>
     </div>
     <div id="problem-detail-view" class="hidden detail-grid">
       <div class="col-stmt">
@@ -446,7 +449,7 @@ li.CodeMirror-hint-active.hint-kw { color: #fff; }
         <div class="guide-content">
           <p><b>① AI 出题</b>（下方）：粘贴一道题的描述，或只写出题要求（如"出一道单调栈中等题"）。AI 生成题面与参考解后，系统在本地沙箱实跑参考解生成全部期望输出——<b>期望输出永远来自真实运行，不来自 AI 猜测</b>；参考解跑挂会自动喂回 AI 修复。</p>
           <p><b>② AI 适配导入</b>：把题目描述保存为 <code>.md</code> / <code>.txt</code>（一题一文件）放进一个目录，指向该目录即可批量导入。每道题都会走"AI 生成参考解+用例 → 沙箱验证自洽"流程，任何来源的题面文本都能变成可判题的题。</p>
-          <p><b>③ JSON 直接导入</b>：已有结构化题目（含测试用例）可按 <code>seeds/coding/cp-001.json</code> 的格式（字段：id / title / difficulty / tags / statement / test_cases[{input, output}]）放入目录直接导入，不消耗 AI。</p>
+          <p><b>③ JSON 直接导入</b>：已有结构化题目（含测试用例）可按 <code>seeds/coding/cp-001.json</code> 的格式放入目录直接导入；可选字段 <code>leetcode_id</code> 和 <code>interview_priority</code>（1-3），不消耗 AI。</p>
           <p><b>推荐题源</b>（本仓库不分发任何题目内容，请自行下载到本地）：</p>
           <ul>
             <li><a href="https://github.com/doocs/leetcode" target="_blank">doocs/leetcode</a>（MIT，74k+ star）：多语言题解与题面，可整库 clone 后挑选若干题保存为 md 导入</li>

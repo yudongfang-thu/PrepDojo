@@ -2,6 +2,8 @@
  "id": "cp-009",
  "title": "岛屿数量",
  "difficulty": "medium",
+ "leetcode_id": 200,
+ "interview_priority": 2,
  "tags": [
   "图",
   "深度优先搜索",
